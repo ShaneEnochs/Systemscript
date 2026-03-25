@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System Awakening — Script Editor</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app">
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <div class="toolbar-brand">⚡ System Awakening</div>
+    <div class="toolbar-sep"></div>
+    <button class="tb-btn primary" id="btn-open">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2 3.5A1.5 1.5 0 013.5 2h3.086a1.5 1.5 0 011.06.44l.915.914H12.5A1.5 1.5 0 0114 4.854V12.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 12.5V3.5z" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
+      Open Folder
+    </button>
+    <button class="tb-btn" id="btn-new">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="3" y="2" width="10" height="12" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 5.5v5M5.5 8h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      New
+    </button>
+    <button class="tb-btn" id="btn-save">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 2h8l2 2v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" stroke-width="1.2" fill="none"/><rect x="5" y="2" width="4" height="3" rx="0.5" stroke="currentColor" stroke-width="1.2"/><rect x="4" y="8" width="8" height="4" rx="0.5" stroke="currentColor" stroke-width="1.2"/></svg>
+      Save
+    </button>
+    <div class="toolbar-sep"></div>
+    <button class="tb-btn" id="btn-find">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="6.5" cy="6.5" r="4" stroke="currentColor" stroke-width="1.2"/><path d="M9.5 9.5l3.5 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      Find
+    </button>
+    <button class="tb-btn" id="btn-global-find">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="6" cy="6" r="3.5" stroke="currentColor" stroke-width="1.2"/><path d="M8.5 8.5l3.5 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M3 12h6M3 14h4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+      Global
+    </button>
+    <button class="tb-btn" id="btn-problems">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.5" r="0.75" fill="currentColor"/></svg>
+      <span id="tb-problems-label">Problems</span>
+    </button>
+    <button class="tb-btn" id="btn-graph">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="3" cy="8" r="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="3" r="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="13" r="1.5" stroke="currentColor" stroke-width="1.2"/><circle cx="13" cy="8" r="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M4.5 8h2M8 4.5v2M8 9.5v2M9.5 8h2" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+      Graph
+    </button>
+    <div class="tb-spacer"></div>
+    <button class="tb-btn" id="btn-settings">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      Settings
+    </button>
+  </div>
+
+  <div id="editor-area">
+    <!-- Sidebar -->
+    <div id="sidebar">
+      <div class="sidebar-header">
+        <span>Project Files</span>
+        <button class="sidebar-header-btn" id="sb-btn-open" title="Open folder">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 3.5A1.5 1.5 0 013.5 2h3.086a1.5 1.5 0 011.06.44l.915.914H12.5A1.5 1.5 0 0114 4.854V12.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 12.5V3.5z" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>
+        </button>
+        <button class="sidebar-header-btn" id="sb-btn-new" title="New file">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div id="file-list">
+        <div class="sidebar-empty" id="sidebar-empty">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" opacity="0.4">
+            <path d="M6 7a2 2 0 012-2h7.172a2 2 0 011.414.586l6.828 6.828A2 2 0 0124 13.828V25a2 2 0 01-2 2H8a2 2 0 01-2-2V7z" stroke="currentColor" stroke-width="1.5" fill="none"/>
+            <path d="M15 5v7a1 1 0 001 1h7" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+          <p>Open a project folder or load the demo to begin</p>
+        </div>
+      </div>
+      <div id="var-tracker" class="visible">
+        <div id="var-tracker-header">
+          <span>Variables</span>
+          <span id="vt-diag-summary">—</span>
+          <button class="sidebar-header-btn" id="btn-toggle-vt" title="Toggle variable tracker" style="margin-left:auto">
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 8l4-4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <div id="var-tracker-list">
+          <div style="color:var(--text-faint);font-size:12px;padding:8px 4px;font-family:'DM Sans',sans-serif">Open a file to see its variables.</div>
+        </div>
+      </div>
+    </div>
+    <div id="sidebar-resize"></div>
+
+    <!-- Main editor area -->
+    <div id="main">
+      <div id="tab-bar"></div>
+      <div id="editor-container">
+        <!-- Welcome screen -->
+        <div id="welcome">
+          <div class="welcome-title"><strong>System Awakening</strong> Script Editor</div>
+          <div class="welcome-sub">A dedicated editor for your interactive fiction engine</div>
+          <div class="welcome-actions">
+            <button class="welcome-btn primary" id="w-btn-open">Open Project Folder</button>
+            <button class="welcome-btn" id="w-btn-new">New File</button>
+            <button class="welcome-btn" id="w-btn-demo">Load Demo</button>
+          </div>
+        </div>
+
+        <!-- Monaco mount point -->
+        <div id="monaco-mount"></div>
+
+        <!-- Find bar -->
+        <div id="find-bar">
+          <input id="find-input" type="text" placeholder="Find…">
+          <span id="find-count">—</span>
+          <button class="find-btn" id="find-prev">↑</button>
+          <button class="find-btn" id="find-next">↓</button>
+          <button class="find-btn" id="find-close">✕</button>
+        </div>
+
+        <!-- Problems panel -->
+        <div id="problems-panel">
+          <div id="problems-header">
+            <span id="problems-title">Problems</span>
+            <button id="problems-close">×</button>
+          </div>
+          <div id="problems-list"></div>
+        </div>
+
+        <!-- Settings panel -->
+        <div id="settings-panel">
+          <div class="settings-header">
+            Editor Settings
+            <button class="settings-close" id="settings-close-btn">×</button>
+          </div>
+          <div class="settings-body">
+            <div class="setting-group">
+              <div class="setting-group-label">Editor</div>
+              <div class="setting-row"><span class="setting-label">Font size</span><input class="setting-input" type="number" id="s-fontsize" value="14" min="10" max="24" style="width:60px"></div>
+              <div class="setting-row"><span class="setting-label">Tab size</span><select class="setting-select" id="s-tabsize" style="width:60px"><option value="2" selected>2</option><option value="4">4</option></select></div>
+              <div class="setting-row"><span class="setting-label">Word wrap</span><label class="setting-toggle"><input type="checkbox" id="s-wordwrap" checked><span class="toggle-slider"></span></label></div>
+              <div class="setting-row"><span class="setting-label">Line numbers</span><label class="setting-toggle"><input type="checkbox" id="s-linenums" checked><span class="toggle-slider"></span></label></div>
+              <div class="setting-row"><span class="setting-label">Minimap</span><label class="setting-toggle"><input type="checkbox" id="s-minimap"><span class="toggle-slider"></span></label></div>
+            </div>
+            <div class="setting-group">
+              <div class="setting-group-label">About</div>
+              <div style="font-size:12px;color:var(--text-faint);line-height:1.6">
+                System Awakening Script Editor<br>v2.0 — TypeScript rebuild
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div id="statusbar">
+    <div class="sb-item"><span id="sb-filename">No file open</span></div>
+    <div class="sb-sep"></div>
+    <div class="sb-item"><span id="sb-type">—</span></div>
+    <div class="sb-item right"><span id="sb-cursor">Ln 1, Col 1</span></div>
+    <div class="sb-sep"></div>
+    <div class="sb-item" id="sb-diag"><span id="sb-diag-text">—</span></div>
+    <div class="sb-sep"></div>
+    <div class="sb-item"><span id="sb-encoding">UTF-8</span></div>
+    <div class="sb-sep"></div>
+    <div class="sb-item"><span id="sb-saved">—</span></div>
+  </div>
+</div>
+
+<!-- Scene Graph overlay -->
+<div id="graph-overlay">
+  <div id="graph-shell">
+    <div id="graph-toolbar">
+      <span class="graph-brand">Scene Graph</span>
+      <button class="g-btn primary" id="g-refresh">↻ Refresh</button>
+      <button class="g-btn" id="g-fit">Fit</button>
+      <button class="g-btn" id="g-layout">Layout</button>
+      <div style="width:1px;height:20px;background:#d4cfc7;margin:0 4px"></div>
+      <button class="g-btn" id="g-zout">−</button>
+      <span id="g-zoom-display">100%</span>
+      <button class="g-btn" id="g-zin">+</button>
+      <div id="g-legend">
+        <span class="g-leg-item"><span class="g-leg-dot" style="background:#1D55C7"></span>startup</span>
+        <span class="g-leg-item"><span class="g-leg-dot" style="background:#1A7F3C"></span>scene</span>
+        <span class="g-leg-item"><span class="g-leg-dot" style="background:#A02020"></span>ending</span>
+        <span class="g-leg-item"><span class="g-leg-dot" style="background:#6B21D6"></span>procedure</span>
+        <span class="g-leg-item"><span class="g-leg-dot" style="background:#a8a49d"></span>unlisted</span>
+      </div>
+      <div style="flex:1"></div>
+      <button class="g-btn" id="g-close" style="font-size:14px;padding:4px 10px">✕ Close</button>
+    </div>
+    <div id="graph-canvas-wrap">
+      <canvas id="graph-grid"></canvas>
+      <svg id="graph-svg-layer" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arr-goto" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="#1A7F3C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+          <marker id="arr-gosub" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M2 1L8 5L2 9" fill="none" stroke="#6B21D6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+      </svg>
+      <div id="graph-canvas"></div>
+    </div>
+    <div id="graph-status">
+      <span id="g-stat-nodes">0 scenes</span>
+      <span id="g-stat-edges">0 connections</span>
+      <span id="g-stat-unreachable"></span>
+      <span style="margin-left:auto;opacity:0.7">Click node to open · Scroll to zoom · Drag to pan</span>
+    </div>
+  </div>
+</div>
+
+<!-- Global Find & Replace modal -->
+<div id="gfr-overlay">
+  <div id="gfr-box">
+    <div id="gfr-header">
+      <h3>Find &amp; Replace — All Files</h3>
+      <button id="gfr-close">×</button>
+    </div>
+    <div id="gfr-inputs">
+      <div class="gfr-row">
+        <span class="gfr-label">Find</span>
+        <input class="gfr-input" id="gfr-find" placeholder="Search text…" autocomplete="off" spellcheck="false">
+        <select id="gfr-scope"><option value="all">All open files</option><option value="current">Current file only</option></select>
+      </div>
+      <div class="gfr-row">
+        <span class="gfr-label">Replace</span>
+        <input class="gfr-input" id="gfr-replace" placeholder="Replacement…" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="gfr-row" style="padding-left:62px">
+        <div class="gfr-opts">
+          <label class="gfr-opt"><input type="checkbox" id="gfr-case"> Case sensitive</label>
+          <label class="gfr-opt"><input type="checkbox" id="gfr-regex"> Regex</label>
+          <label class="gfr-opt"><input type="checkbox" id="gfr-whole"> Whole word</label>
+        </div>
+      </div>
+    </div>
+    <div class="gfr-actions">
+      <button class="gfr-action-btn primary" id="gfr-btn-find">Find All</button>
+      <button class="gfr-action-btn" id="gfr-btn-replace-next">Replace Next</button>
+      <button class="gfr-action-btn" id="gfr-btn-replace-all">Replace All</button>
+      <button class="gfr-action-btn" id="gfr-btn-clear" style="margin-left:auto">Clear</button>
+    </div>
+    <div id="gfr-results"><div id="gfr-empty">Enter a search term and click Find All.</div></div>
+    <div id="gfr-summary"></div>
+  </div>
+</div>
+
+<!-- Context menu -->
+<div id="context-menu">
+  <div class="ctx-item" data-action="close">Close tab <span class="ctx-kbd">Ctrl+W</span></div>
+  <div class="ctx-item" data-action="closeOthers">Close others</div>
+  <div class="ctx-item" data-action="closeAll">Close all</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" data-action="save">Save <span class="ctx-kbd">Ctrl+S</span></div>
+  <div class="ctx-item" data-action="copyPath">Copy filename</div>
+</div>
+
+<!-- Hidden file inputs -->
+<input type="file" id="folder-input" webkitdirectory style="display:none">
+
+<!-- Monaco AMD loader (CDN) then our bundled app -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+<script src="dist/sa-ide.js"></script>
+</body>
+</html>

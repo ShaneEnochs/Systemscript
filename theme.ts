@@ -1,0 +1,78 @@
+// ---------------------------------------------------------------------------
+// theme.ts — sa-light editor theme for Monaco.
+// ---------------------------------------------------------------------------
+
+import { T } from './language.js';
+
+declare const monaco: typeof import('monaco-editor');
+
+export function registerTheme(): void {
+  monaco.editor.defineTheme('sa-light', {
+    base: 'vs',
+    inherit: false,
+    rules: [
+      { token: T.COMMENT,    foreground: '9C9890', fontStyle: 'italic' },
+      { token: T.UNKNOWN,    foreground: 'E03030', fontStyle: 'bold' },
+      { token: '',           foreground: '2c2a26' },
+      { token: T.DECLARE,    foreground: '1D55C7', fontStyle: 'bold' },
+      { token: T.TEMP,       foreground: '3B6DD4', fontStyle: 'bold' },
+      { token: T.ASSIGN,     foreground: '5B3FBF', fontStyle: 'bold' },
+      { token: T.COND,       foreground: '6B21D6', fontStyle: 'bold' },
+      { token: T.LOOP,       foreground: '8B1FA0', fontStyle: 'bold' },
+      { token: T.NAV,        foreground: '1055B0', fontStyle: 'bold' },
+      { token: T.CHOICE,     foreground: '1A7F3C', fontStyle: 'bold' },
+      { token: T.CHOICE_OPT, foreground: '1A7F3C' },
+      { token: T.LABEL,      foreground: '0A6E50', fontStyle: 'bold' },
+      { token: T.DISPLAY,    foreground: '0A7E6E', fontStyle: 'bold' },
+      { token: T.INPUT,      foreground: '096860', fontStyle: 'bold' },
+      { token: T.SKILLS,     foreground: '7C5C2E', fontStyle: 'bold' },
+      { token: T.ITEMS,      foreground: 'C44A00', fontStyle: 'bold' },
+      { token: T.JOURNAL,    foreground: '8A6400', fontStyle: 'bold' },
+      { token: T.PROC,       foreground: '6B21D6', fontStyle: 'bold' },
+      { token: T.SAVE,       foreground: '3A5FA0', fontStyle: 'bold' },
+      { token: T.GLOSS,      foreground: '4A6880', fontStyle: 'bold' },
+      { token: T.ENDING,     foreground: 'A02020', fontStyle: 'bold' },
+      { token: T.META,       foreground: 'A8A49D', fontStyle: 'italic' },
+      { token: T.STATS_FILE, foreground: '0A7E6E', fontStyle: 'bold' },
+      { token: T.DEF_BLOCK,  foreground: 'A05020', fontStyle: 'bold' },
+      { token: T.STR,        foreground: 'C04800' },
+      { token: T.INTERP,     foreground: '0A7E6E', fontStyle: 'bold' },
+      { token: T.PRONOUN,    foreground: '0A7E6E', fontStyle: 'italic' },
+      { token: T.EXPR_OPEN,  foreground: '7A5800' },
+      { token: T.EXPR_KW,    foreground: 'A0006E', fontStyle: 'bold' },
+      { token: T.NUMBER,     foreground: '8B2500' },
+      { token: T.VARNAME,    foreground: '1c1a17' },
+      { token: T.SCENENAME,  foreground: '1D55C7' },
+      { token: T.LABELNAME,  foreground: '0A6E50' },
+      { token: T.PROCNAME,   foreground: '6B21D6' },
+      { token: T.RARITY,     foreground: 'B07800', fontStyle: 'bold' },
+      { token: T.INLINE_TAG, foreground: 'A8A49D' },
+    ],
+    colors: {
+      'editor.background':                  '#ffffff',
+      'editor.foreground':                  '#2c2a26',
+      'editor.lineHighlightBackground':     '#f8f6f2',
+      'editor.selectionBackground':         '#d4ccbc',
+      'editor.inactiveSelectionBackground': '#e8e4dc',
+      'editor.findMatchBackground':         '#f5c97a',
+      'editor.findMatchHighlightBackground':'#fae5b0',
+      'editorLineNumber.foreground':        '#c8c4bc',
+      'editorLineNumber.activeForeground':  '#7c5c2e',
+      'editorCursor.foreground':            '#7c5c2e',
+      'editorIndentGuide.background1':      '#ece8e0',
+      'editorIndentGuide.activeBackground1':'#c4b89a',
+      'editorGutter.background':            '#f9f8f5',
+      'editorBracketMatch.background':      '#eddfc8',
+      'editorBracketMatch.border':          '#b8935a',
+      'editorBracketHighlight.foreground1': '#6B21D6',
+      'editorBracketHighlight.foreground2': '#1A7F3C',
+      'editorBracketHighlight.foreground3': '#1D55C7',
+      'editorBracketHighlight.foreground4': '#C44A00',
+      'editorBracketHighlight.foreground5': '#0A7E6E',
+      'editorBracketHighlight.foreground6': '#7c5c2e',
+      'scrollbarSlider.background':         '#d8d4cc88',
+      'scrollbarSlider.hoverBackground':    '#c4c0b888',
+      'scrollbarSlider.activeBackground':   '#a8a49d88',
+    },
+  });
+}

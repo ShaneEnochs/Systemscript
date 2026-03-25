@@ -572,7 +572,7 @@ __define('./ui/tabs.js', function(__exports, __req) {
 // ---------------------------------------------------------------------------
 // tabs.ts — Tab management: open, activate, close, render.
 // ---------------------------------------------------------------------------
-const { editor, tabs, activeTabId, setActiveTabId, getTab, getFileType, $, updateSidebarSelection, } = __req('../state.js');
+const { editor, tabs, activeTabId, setActiveTabId, getTab, getFileType, $, updateSidebarSelection, saveSession, } = __req('../state.js');
 const { updateStatusBar } = __req('./statusbar.js');
 const { showContextMenu } = __req('./context-menu.js');
 function openTab(name, content) {
@@ -587,6 +587,7 @@ function openTab(name, content) {
     tabs.push({ id, name, content, model, modified: false, fileType: ft });
     activateTab(id);
     $('welcome').style.display = 'none';
+    saveSession();
 }
 function activateTab(id) {
     setActiveTabId(id);
@@ -622,6 +623,7 @@ function closeTab(id, event) {
             updateStatusBar(null);
         }
     }
+    saveSession();
     renderTabs();
 }
 function closeActiveTab() {

@@ -4,7 +4,7 @@
 
 import {
   editor, tabs, activeTabId, setActiveTabId, getTab, getFileType,
-  $, updateSidebarSelection,
+  $, updateSidebarSelection, saveSession,
 } from '../state.js';
 import { updateStatusBar } from './statusbar.js';
 import { showContextMenu } from './context-menu.js';
@@ -21,6 +21,7 @@ export function openTab(name: string, content: string): void {
   tabs.push({ id, name, content, model, modified: false, fileType: ft });
   activateTab(id);
   $('welcome').style.display = 'none';
+  saveSession();
 }
 
 export function activateTab(id: number): void {
@@ -53,6 +54,7 @@ export function closeTab(id: number, event?: Event): void {
       updateStatusBar(null);
     }
   }
+  saveSession();
   renderTabs();
 }
 

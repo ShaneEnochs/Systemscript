@@ -5,14 +5,14 @@
 // creates the editor, and wires all modules together.
 // ---------------------------------------------------------------------------
 
-import { editor, setEditor, tabs, getActiveTab, layoutEditor, $ } from './state.js';
+import { editor, setEditor, tabs, getActiveTab, layoutEditor, saveSession, loadSession, $ } from './state.js';
 import { registerLanguage } from './monaco/language.js';
 import { registerTheme } from './monaco/theme.js';
 import { registerCompletionProvider, registerHoverProvider } from './monaco/completions.js';
 import { initDecorations, scheduleDecorate } from './features/decorations.js';
 import { scheduleDiagnostics } from './features/diagnostics.js';
 import { registerFoldingProvider } from './features/folding.js';
-import { openTab, closeActiveTab, renderTabs } from './ui/tabs.js';
+import { openTab, closeActiveTab, renderTabs, activateTab } from './ui/tabs.js';
 import { initContextMenu } from './ui/context-menu.js';
 import { toggleFind, initLocalFind, openGlobalFind, closeGlobalFind, initGlobalFind } from './ui/find.js';
 import { setSaveStatus } from './ui/statusbar.js';
@@ -90,6 +90,19 @@ require(['vs/editor/editor.main'], function () {
     scheduleDecorate();
     scheduleDiagnostics();
   });
+
+  // ── Restore session or load demo ────────────────────────────────────────
+  const saved = loadSession();
+  if (saved) {
+    saved.tabs.forEach(st => {
+      openTab(st.name, st.content);
+    });
+    // Activate the tab that was active before refresh
+    if (saved.activeIndex >= 0 && saved.activeIndex < tabs.length) {
+      activateTab(tabs[saved.activeIndex].id);
+    }
+    $('welcome').style.display = 'none';
+  }
 
   // ── Keybindings ─────────────────────────────────────────────────────────
   const monaco = (window as any).monaco;
@@ -179,6 +192,9 @@ require(['vs/editor/editor.main'], function () {
 
   // Save from context menu
   document.addEventListener('sa-save', () => saveFile());
+
+  // Persist session on page unload
+  window.addEventListener('beforeunload', () => saveSession());
 
   // ── Global key bindings ─────────────────────────────────────────────────
   document.addEventListener('keydown', (e: KeyboardEvent) => {

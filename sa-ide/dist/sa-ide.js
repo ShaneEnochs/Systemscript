@@ -95,6 +95,35 @@ function jumpToLine(ln) {
     editor.setPosition({ lineNumber: ln, column: 1 });
     editor.focus();
 }
+const SESSION_KEY = 'sa-session';
+function saveSession() {
+    try {
+        const data = {
+            tabs: tabs.map(t => ({
+                name: t.name,
+                content: t.model.getValue(),
+                modified: t.modified,
+            })),
+            activeIndex: tabs.findIndex(t => t.id === activeTabId),
+        };
+        localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+    }
+    catch { /* localStorage full or unavailable — ignore */ }
+}
+function loadSession() {
+    try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (!raw)
+            return null;
+        const data = JSON.parse(raw);
+        if (!Array.isArray(data.tabs) || !data.tabs.length)
+            return null;
+        return data;
+    }
+    catch {
+        return null;
+    }
+}
 
 Object.defineProperty(__exports, 'getFileType', { get: function() { return getFileType; }, enumerable: true });
 Object.defineProperty(__exports, 'escHtml', { get: function() { return escHtml; }, enumerable: true });
@@ -107,6 +136,8 @@ Object.defineProperty(__exports, 'getTab', { get: function() { return getTab; },
 Object.defineProperty(__exports, 'layoutEditor', { get: function() { return layoutEditor; }, enumerable: true });
 Object.defineProperty(__exports, 'updateSidebarSelection', { get: function() { return updateSidebarSelection; }, enumerable: true });
 Object.defineProperty(__exports, 'jumpToLine', { get: function() { return jumpToLine; }, enumerable: true });
+Object.defineProperty(__exports, 'saveSession', { get: function() { return saveSession; }, enumerable: true });
+Object.defineProperty(__exports, 'loadSession', { get: function() { return loadSession; }, enumerable: true });
 Object.defineProperty(__exports, 'tabs', { get: function() { return tabs; }, enumerable: true });
 Object.defineProperty(__exports, 'fileMap', { get: function() { return fileMap; }, enumerable: true });
 Object.defineProperty(__exports, 'editor', { get: function() { return editor; }, enumerable: true });
@@ -685,7 +716,7 @@ __define('./files/file-ops.js', function(__exports, __req) {
 // ---------------------------------------------------------------------------
 // file-ops.ts — File I/O: open folder, save, new file, templates, demo.
 // ---------------------------------------------------------------------------
-const { getActiveTab, fileMap, $ } = __req('../state.js');
+const { getActiveTab, fileMap, saveSession, $ } = __req('../state.js');
 const { openTab, renderTabs } = __req('../ui/tabs.js');
 const { renderSidebar, loadSidebarFile } = __req('../ui/sidebar.js');
 const { setSaveStatus } = __req('../ui/statusbar.js');
@@ -698,12 +729,8 @@ function scheduleAutoSave() {
     if (autoSaveTimer !== null)
         clearTimeout(autoSaveTimer);
     autoSaveTimer = setTimeout(() => {
-        const tab = getActiveTab();
-        if (tab?.modified) {
-            tab.modified = false;
-            renderTabs();
-            setSaveStatus('Auto-saved');
-        }
+        saveSession();
+        setSaveStatus('Session saved');
     }, autoSaveDelay);
 }
 // ── Open folder ───────────────────────────────────────────────────────────
@@ -753,7 +780,7 @@ function saveFile() {
     a.href = URL.createObjectURL(blob);
     a.download = tab.name;
     a.click();
-    URL.revokeObjectURL(a.href);
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
     tab.modified = false;
     renderTabs();
     setSaveStatus('Saved — ' + new Date().toLocaleTimeString());
@@ -1144,6 +1171,8 @@ function fitView() {
         return;
     const w = wrap().clientWidth;
     const h = wrap().clientHeight;
+    if (w === 0 || h === 0)
+        return;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     nodes.forEach(n => {
         minX = Math.min(minX, n.x);
@@ -1224,7 +1253,8 @@ function initEvents() {
 function openSceneGraph() {
     $('graph-overlay').classList.add('visible');
     initEvents();
-    refreshSceneGraph();
+    // Defer render until after CSS reflow (display:none → flex needs a frame).
+    requestAnimationFrame(() => refreshSceneGraph());
 }
 function closeSceneGraph() {
     $('graph-overlay').classList.remove('visible');
@@ -1859,14 +1889,14 @@ __define('./main.js', function(__exports, __req) {
 // Runs inside the Monaco AMD `require()` callback. Registers the language,
 // creates the editor, and wires all modules together.
 // ---------------------------------------------------------------------------
-const { setEditor, getActiveTab, layoutEditor, $ } = __req('./state.js');
+const { setEditor, tabs, getActiveTab, layoutEditor, saveSession, loadSession, $ } = __req('./state.js');
 const { registerLanguage } = __req('./monaco/language.js');
 const { registerTheme } = __req('./monaco/theme.js');
 const { registerCompletionProvider, registerHoverProvider } = __req('./monaco/completions.js');
 const { initDecorations, scheduleDecorate } = __req('./features/decorations.js');
 const { scheduleDiagnostics } = __req('./features/diagnostics.js');
 const { registerFoldingProvider } = __req('./features/folding.js');
-const { closeActiveTab, renderTabs } = __req('./ui/tabs.js');
+const { openTab, closeActiveTab, renderTabs, activateTab } = __req('./ui/tabs.js');
 const { initContextMenu } = __req('./ui/context-menu.js');
 const { toggleFind, initLocalFind, openGlobalFind, closeGlobalFind, initGlobalFind } = __req('./ui/find.js');
 const { setSaveStatus } = __req('./ui/statusbar.js');
@@ -1934,6 +1964,18 @@ require(['vs/editor/editor.main'], function () {
         scheduleDecorate();
         scheduleDiagnostics();
     });
+    // ── Restore session or load demo ────────────────────────────────────────
+    const saved = loadSession();
+    if (saved) {
+        saved.tabs.forEach(st => {
+            openTab(st.name, st.content);
+        });
+        // Activate the tab that was active before refresh
+        if (saved.activeIndex >= 0 && saved.activeIndex < tabs.length) {
+            activateTab(tabs[saved.activeIndex].id);
+        }
+        $('welcome').style.display = 'none';
+    }
     // ── Keybindings ─────────────────────────────────────────────────────────
     const monaco = window.monaco;
     ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveFile);
@@ -2010,6 +2052,8 @@ require(['vs/editor/editor.main'], function () {
     initGlobalFind();
     // Save from context menu
     document.addEventListener('sa-save', () => saveFile());
+    // Persist session on page unload
+    window.addEventListener('beforeunload', () => saveSession());
     // ── Global key bindings ─────────────────────────────────────────────────
     document.addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'o') {

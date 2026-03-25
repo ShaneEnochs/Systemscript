@@ -326,6 +326,7 @@ export function fitView(): void {
   if (!nodes.length) return;
   const w = wrap().clientWidth;
   const h = wrap().clientHeight;
+  if (w === 0 || h === 0) return;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   nodes.forEach(n => {
     minX = Math.min(minX, n.x);
@@ -413,7 +414,8 @@ export function initEvents(): void {
 export function openSceneGraph(): void {
   $('graph-overlay').classList.add('visible');
   initEvents();
-  refreshSceneGraph();
+  // Defer render until after CSS reflow (display:none → flex needs a frame).
+  requestAnimationFrame(() => refreshSceneGraph());
 }
 
 export function closeSceneGraph(): void {

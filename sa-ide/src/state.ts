@@ -125,3 +125,42 @@ export function jumpToLine(ln: number): void {
   editor.setPosition({ lineNumber: ln, column: 1 });
   editor.focus();
 }
+
+// ── Session persistence (localStorage) ────────────────────────────────────
+
+interface SavedTab {
+  name:     string;
+  content:  string;
+  modified: boolean;
+}
+
+interface SavedSession {
+  tabs:        SavedTab[];
+  activeIndex: number;
+}
+
+const SESSION_KEY = 'sa-session';
+
+export function saveSession(): void {
+  try {
+    const data: SavedSession = {
+      tabs: tabs.map(t => ({
+        name:     t.name,
+        content:  t.model.getValue(),
+        modified: t.modified,
+      })),
+      activeIndex: tabs.findIndex(t => t.id === activeTabId),
+    };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+  } catch { /* localStorage full or unavailable — ignore */ }
+}
+
+export function loadSession(): SavedSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as SavedSession;
+    if (!Array.isArray(data.tabs) || !data.tabs.length) return null;
+    return data;
+  } catch { return null; }
+}

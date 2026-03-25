@@ -2,7 +2,7 @@
 // file-ops.ts — File I/O: open folder, save, new file, templates, demo.
 // ---------------------------------------------------------------------------
 
-import { tabs, getActiveTab, fileMap, $ } from '../state.js';
+import { tabs, getActiveTab, fileMap, saveSession, $ } from '../state.js';
 import { openTab, renderTabs } from '../ui/tabs.js';
 import { renderSidebar, loadSidebarFile } from '../ui/sidebar.js';
 import { setSaveStatus } from '../ui/statusbar.js';
@@ -17,12 +17,8 @@ export function scheduleAutoSave(): void {
   if (!autoSaveDelay) return;
   if (autoSaveTimer !== null) clearTimeout(autoSaveTimer);
   autoSaveTimer = setTimeout(() => {
-    const tab = getActiveTab();
-    if (tab?.modified) {
-      tab.modified = false;
-      renderTabs();
-      setSaveStatus('Auto-saved');
-    }
+    saveSession();
+    setSaveStatus('Session saved');
   }, autoSaveDelay);
 }
 
@@ -75,7 +71,7 @@ export function saveFile(): void {
   a.href = URL.createObjectURL(blob);
   a.download = tab.name;
   a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
   tab.modified = false;
   renderTabs();
   setSaveStatus('Saved — ' + new Date().toLocaleTimeString());

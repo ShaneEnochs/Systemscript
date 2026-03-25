@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { editor, tabs, getActiveTab, getFileType, escHtml, GfrResult, $ } from '../state.js';
-import { activateTab } from './tabs.js';
+import { activateTab, renderTabs } from './tabs.js';
 
 declare const monaco: typeof import('monaco-editor');
 
@@ -173,13 +173,8 @@ export function runGlobalReplace(all: boolean): void {
   });
 
   // Re-render tabs (modified state) then re-search.
-  // renderTabs is imported at module level from tabs.ts — no circular issue
-  // because find.ts doesn't import from tabs.ts and tabs.ts doesn't import
-  // from find.ts.  We import it here lazily to be safe.
-  import('./tabs.js').then(({ renderTabs }) => {
-    renderTabs();
-    runGlobalFind();
-  });
+  renderTabs();
+  runGlobalFind();
 }
 
 export function initGlobalFind(): void {

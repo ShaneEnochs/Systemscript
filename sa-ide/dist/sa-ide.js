@@ -1632,7 +1632,7 @@ __define('./ui/find.js', function(__exports, __req) {
 // find.ts — Local find bar + Global find & replace.
 // ---------------------------------------------------------------------------
 const { editor, tabs, getActiveTab, getFileType, escHtml, $ } = __req('../state.js');
-const { activateTab } = __req('./tabs.js');
+const { activateTab, renderTabs } = __req('./tabs.js');
 // ── Local find ────────────────────────────────────────────────────────────
 let findMatches = [];
 let findIndex = 0;
@@ -1809,13 +1809,8 @@ function runGlobalReplace(all) {
         tab.modified = true;
     });
     // Re-render tabs (modified state) then re-search.
-    // renderTabs is imported at module level from tabs.ts — no circular issue
-    // because find.ts doesn't import from tabs.ts and tabs.ts doesn't import
-    // from find.ts.  We import it here lazily to be safe.
-    Promise.resolve(__req('./tabs.js')).then(({ renderTabs }) => {
-        renderTabs();
-        runGlobalFind();
-    });
+    renderTabs();
+    runGlobalFind();
 }
 function initGlobalFind() {
     $('btn-global-find').addEventListener('click', openGlobalFind);

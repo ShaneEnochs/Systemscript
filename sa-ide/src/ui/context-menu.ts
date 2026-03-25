@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { getTab, setContextTabId, contextTabId, tabs, $ } from '../state.js';
-import { closeTab, activateTab, renderTabs } from './tabs.js';
+import { closeTab, activateTab } from './tabs.js';
 
 export function showContextMenu(e: MouseEvent, tabId: number): void {
   e.preventDefault();

@@ -19,7 +19,7 @@ import { toggleFind, initLocalFind, openGlobalFind, closeGlobalFind, initGlobalF
 import { setSaveStatus } from './ui/statusbar.js';
 import { refreshOutline } from './ui/outline.js';
 import { openFiles, newFile, saveFile, loadDemoContent, initFileInput, scheduleAutoSave, exportProject, openImportModal, initStringModal } from './files/file-ops.js';
-import { openSceneGraph, closeSceneGraph, refreshSceneGraph, fitView, zoomBy, addGraphNode } from './graph/scene-graph.js';
+import { openSceneGraph, closeSceneGraph, refreshSceneGraph, fitView, zoomBy } from './graph/scene-graph.js';
 
 declare const require: any;
 

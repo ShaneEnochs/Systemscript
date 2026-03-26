@@ -1,10 +1,11 @@
 // ---------------------------------------------------------------------------
-// sidebar.ts — File tree panel rendering.
+// sidebar.ts — File tree panel rendering and sidebar file actions.
 // ---------------------------------------------------------------------------
 
-import { FileEntry, getFileType, $ } from '../state.js';
+import { FileEntry, getFileType, $, fileMap } from '../state.js';
 import { openTab, activateTab } from './tabs.js';
 import { tabs } from '../state.js';
+import { deleteFile, renameFile } from '../files/file-ops.js';
 
 export function renderSidebar(files: FileEntry[]): void {
   const list = $('file-list');
@@ -32,11 +33,51 @@ export function renderSidebar(files: FileEntry[]): void {
       item.dataset.file = f.name;
       item.innerHTML = `<span class="file-dot" style="background:${ft.color}"></span><span class="filename">${f.name}</span><span class="file-badge">${ft.badge}</span>`;
       item.addEventListener('click', () => loadSidebarFile(f));
+      item.addEventListener('contextmenu', (e: MouseEvent) => showSidebarMenu(e, f.name));
       g.appendChild(item);
     });
     list.appendChild(g);
   });
   list.appendChild(empty);
+}
+
+// ── Sidebar context menu ──────────────────────────────────────────────────
+
+let _menuTarget: string | null = null;
+
+function showSidebarMenu(e: MouseEvent, filename: string): void {
+  e.preventDefault();
+  _menuTarget = filename;
+  const menu = $('sidebar-menu');
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+  menu.classList.add('visible');
+}
+
+export function initSidebarMenu(): void {
+  document.querySelectorAll('#sidebar-menu .ctx-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const action = (el as HTMLElement).dataset.action;
+      $('sidebar-menu').classList.remove('visible');
+      if (!_menuTarget) return;
+      if (action === 'rename') {
+        const newName = prompt(`Rename "${_menuTarget}" to:`, _menuTarget);
+        if (newName?.trim() && newName.trim() !== _menuTarget) {
+          const n = newName.trim().endsWith('.txt') ? newName.trim() : newName.trim() + '.txt';
+          renameFile(_menuTarget!, n);
+        }
+      }
+      if (action === 'delete') {
+        deleteFile(_menuTarget!);
+      }
+      _menuTarget = null;
+    });
+  });
+
+  document.addEventListener('click', (e) => {
+    const menu = $('sidebar-menu');
+    if (!menu.contains(e.target as Node)) menu.classList.remove('visible');
+  });
 }
 
 // updateSidebarSelection lives in state.ts to avoid circular dep with tabs.ts

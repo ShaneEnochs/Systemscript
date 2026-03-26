@@ -1,7 +1,7 @@
 // ============================================================
 // TEST SUITE 3: BUNDLE INTEGRITY
 // Verifies the compiled dist/sa-ide.js is well-formed:
-//   a) All 15 expected modules are defined
+//   a) All 16 expected modules are defined
 //   b) All module exports are present and correct
 //   c) Correct module dependency order (state first, main last)
 //   d) No dangling JS syntax errors (parseable)
@@ -47,6 +47,7 @@ const EXPECTED_MODULES = [
   './monaco/theme.js',
   './monaco/completions.js',
   './ui/find.js',
+  './ui/outline.js',
   './main.js',
 ];
 
@@ -56,7 +57,7 @@ for (const mod of EXPECTED_MODULES) {
 
 // Count total modules
 const modCount = (BUNDLE.match(/__define\('/g) || []).length;
-eq('exactly 15 modules in bundle', modCount, 15);
+eq('exactly 16 modules in bundle', modCount, 16);
 
 // ══════════════════════════════════════════════════════════
 console.log('\n── 3b. Module exports present ──────────────────────────\n');

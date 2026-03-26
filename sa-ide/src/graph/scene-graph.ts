@@ -1,13 +1,13 @@
 // ---------------------------------------------------------------------------
 // scene-graph.ts — Scene graph parser, auto-layout, and interactive renderer.
 //
-// FIX (v2): SVG layer now shares the same CSS transform as the node canvas,
-// so edges always align with nodes.  Edges are drawn in canvas-local coords.
+// FIX (v2): SVG layer shares same CSS transform as node canvas so edges align.
+// v3 improvements: edge coloring, path highlight, dead end detection,
+//   dblclick-to-open, pan/zoom state persistence.
 // ---------------------------------------------------------------------------
 
 import { tabs, escHtml, fileMap, $ } from '../state.js';
-import { activateTab } from '../ui/tabs.js';
-import { loadSidebarFile } from '../ui/sidebar.js';
+import { activateTab, openTab } from '../ui/tabs.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -32,6 +32,10 @@ interface GEdge {
 
 const NW = 200;
 const NH = 72;
+
+// Edge colors: blue=goto (direct transfer), orange=gosub (subroutine call)
+const EDGE_GOTO_COLOR  = '#2563EB';
+const EDGE_GOSUB_COLOR = '#EA580C';
 
 const NODE_COLORS: Record<string, string> = {
   startup:    '#1D55C7',
@@ -59,6 +63,13 @@ let panSX = 0;
 let panSY = 0;
 let selected: number | null = null;
 let eventsInit = false;
+
+// Path highlight state
+let pathNodeIds   = new Set<number>();
+let pathEdgeKeys  = new Set<string>(); // "fromId-toId"
+
+// Dead end set
+let deadEndIds = new Set<number>();
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
 
@@ -200,6 +211,57 @@ export function autoLayout(): void {
         n.y = i * VGAP - totalH / 2 + VGAP / 2;
       });
     });
+
+  // Compute dead ends (nodes with no outgoing edges)
+  const hasOutgoing = new Set(edges.map(e => e.from));
+  deadEndIds = new Set(nodes.filter(n => !hasOutgoing.has(n.id)).map(n => n.id));
+}
+
+// ── Path computation ──────────────────────────────────────────────────────
+
+function computePath(targetId: number): void {
+  pathNodeIds.clear();
+  pathEdgeKeys.clear();
+
+  const startNode = nodes.find(n => n.name === 'startup.txt') || nodes[0];
+  if (!startNode) return;
+
+  pathNodeIds.add(targetId);
+  if (startNode.id === targetId) return;
+
+  // Build adjacency
+  const adj: Record<number, number[]> = {};
+  nodes.forEach(n => { adj[n.id] = []; });
+  edges.forEach(e => { if (adj[e.from]) adj[e.from].push(e.to); });
+
+  // BFS
+  const prev: Record<number, number> = {};
+  const visited = new Set<number>([startNode.id]);
+  const queue = [startNode.id];
+  let found = false;
+  let head = 0;
+  while (head < queue.length && !found) {
+    const curr = queue[head++];
+    for (const next of adj[curr] || []) {
+      if (!visited.has(next)) {
+        visited.add(next);
+        prev[next] = curr;
+        if (next === targetId) { found = true; break; }
+        queue.push(next);
+      }
+    }
+  }
+
+  if (found) {
+    let curr = targetId;
+    pathNodeIds.add(curr);
+    while (prev[curr] !== undefined) {
+      const p = prev[curr];
+      pathEdgeKeys.add(`${p}-${curr}`);
+      pathNodeIds.add(p);
+      curr = p;
+    }
+  }
 }
 
 // ── Rendering ─────────────────────────────────────────────────────────────
@@ -224,15 +286,24 @@ function updXform(): void {
 function renderNodes(): void {
   canvasEl().innerHTML = '';
   nodes.forEach(n => {
+    const onPath     = pathNodeIds.has(n.id);
+    const isDeadEnd  = deadEndIds.has(n.id) && !n.ghost;
     const el = document.createElement('div');
-    el.className = 'g-node' + (n.id === selected ? ' g-selected' : '') + (n.ghost ? ' g-unreachable' : '');
+    el.className = [
+      'g-node',
+      n.id === selected ? 'g-selected' : '',
+      n.ghost           ? 'g-unreachable' : '',
+      onPath            ? 'g-path' : '',
+      isDeadEnd         ? 'g-deadend' : '',
+    ].filter(Boolean).join(' ');
     el.dataset.id = String(n.id);
     el.style.left = n.x + 'px';
     el.style.top = n.y + 'px';
     el.style.width = NW + 'px';
     el.style.minHeight = NH + 'px';
     const col = NODE_COLORS[n.role] || NODE_COLORS.unlisted;
-    el.innerHTML = `<div class="g-node-header" style="border-left-color:${col}"><span class="g-node-title">${escHtml(n.label)}</span><span class="g-node-badge" style="color:${col}">${n.ghost ? 'unlisted' : n.role}</span></div>${n.ghost ? '<div class="g-node-body" style="color:#c04800">File not open</div>' : ''}`;
+    const deadEndBadge = isDeadEnd ? '<span class="g-dead-icon" title="Dead end — no outgoing scene links">⊘</span>' : '';
+    el.innerHTML = `<div class="g-node-header" style="border-left-color:${col}"><span class="g-node-title">${escHtml(n.label)}</span>${deadEndBadge}<span class="g-node-badge" style="color:${col}">${n.ghost ? 'unlisted' : n.role}</span></div>${n.ghost ? '<div class="g-node-body" style="color:#c04800">File not open</div>' : ''}`;
 
     el.addEventListener('mousedown', (e: MouseEvent) => {
       e.stopPropagation();
@@ -246,15 +317,29 @@ function renderNodes(): void {
       });
     });
 
-    el.addEventListener('click', () => {
-      if (!n.ghost) {
-        const tab = tabs.find(t => t.name === n.name);
-        if (tab) {
-          activateTab(tab.id);
-        } else {
-          const f = fileMap.get(n.name);
-          if (f) loadSidebarFile(f);
-        }
+    // Single click: highlight path from startup to this node
+    el.addEventListener('click', (e: MouseEvent) => {
+      e.stopPropagation();
+      if (selected === n.id && pathNodeIds.size > 0) {
+        // Second click on same node: clear path
+        pathNodeIds.clear();
+        pathEdgeKeys.clear();
+      } else {
+        computePath(n.id);
+      }
+      render();
+    });
+
+    // Double click: open scene file in editor
+    el.addEventListener('dblclick', (e: MouseEvent) => {
+      e.stopPropagation();
+      if (n.ghost) return;
+      const existing = tabs.find(t => t.name === n.name);
+      if (existing) {
+        activateTab(existing.id);
+      } else {
+        const f = fileMap.get(n.name);
+        if (f?.content !== undefined) openTab(n.name, f.content);
       }
     });
 
@@ -275,17 +360,23 @@ function renderEdges(): void {
     const dx = Math.abs(x2 - x1);
     const cp = Math.max(50, dx * 0.4);
     const d = `M${x1},${y1} C${x1 + cp},${y1} ${x2 - cp},${y2} ${x2},${y2}`;
-    const col = edge.kind === 'goto' ? '#1A7F3C' : '#6B21D6';
+    const onPath = pathEdgeKeys.has(`${edge.from}-${edge.to}`);
+    const baseCol = edge.kind === 'goto' ? EDGE_GOTO_COLOR : EDGE_GOSUB_COLOR;
+    const col = onPath ? '#22C55E' : baseCol;
     const dash = edge.kind === 'goto' ? '' : '6 4';
+    const strokeW = onPath ? '3' : '2';
+    const opacity = onPath ? '1' : '0.7';
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.classList.add('g-edge');
     path.setAttribute('d', d);
     path.setAttribute('fill', 'none');
     path.setAttribute('stroke', col);
-    path.setAttribute('stroke-width', '2');
-    path.setAttribute('stroke-opacity', '0.7');
+    path.setAttribute('stroke-width', strokeW);
+    path.setAttribute('stroke-opacity', opacity);
     if (dash) path.setAttribute('stroke-dasharray', dash);
     path.setAttribute('marker-end', `url(#arr-${edge.kind})`);
+    path.dataset.from = String(edge.from);
+    path.dataset.to   = String(edge.to);
     svgEl().appendChild(path);
   });
 }
@@ -321,6 +412,12 @@ function updStatus(): void {
   $('g-stat-edges').textContent = edges.length + ' connection' + (edges.length !== 1 ? 's' : '');
   const ghosts = nodes.filter(n => n.ghost).length;
   $('g-stat-unreachable').textContent = ghosts ? `${ghosts} unlisted` : '';
+  const deadEl = $('g-stat-deadends');
+  if (deadEl) {
+    const realDeadEnds = [...deadEndIds].filter(id => !nodes.find(n => n.id === id)?.ghost).length;
+    deadEl.textContent = realDeadEnds ? `${realDeadEnds} dead end${realDeadEnds !== 1 ? 's' : ''}` : '';
+    (deadEl as HTMLElement).style.color = realDeadEnds ? '#EA580C' : '';
+  }
 }
 
 // ── Fit view and zoom ─────────────────────────────────────────────────────
@@ -356,6 +453,27 @@ export function zoomBy(dir: number): void {
   render();
 }
 
+// ── Graph state persistence ───────────────────────────────────────────────
+
+const GRAPH_STATE_KEY = 'sa-graph-state';
+
+function saveGraphState(): void {
+  try {
+    localStorage.setItem(GRAPH_STATE_KEY, JSON.stringify({ panX, panY, scale }));
+  } catch { /* ignore */ }
+}
+
+function restoreGraphState(): void {
+  try {
+    const raw = localStorage.getItem(GRAPH_STATE_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw) as { panX?: number; panY?: number; scale?: number };
+    if (typeof s.panX === 'number') panX = s.panX;
+    if (typeof s.panY === 'number') panY = s.panY;
+    if (typeof s.scale === 'number') scale = Math.min(3, Math.max(0.1, s.scale));
+  } catch { /* ignore */ }
+}
+
 // ── Pointer events ────────────────────────────────────────────────────────
 
 export function initEvents(): void {
@@ -369,6 +487,17 @@ export function initEvents(): void {
     panSX = e.clientX - panX;
     panSY = e.clientY - panY;
     w.classList.add('dragging');
+  });
+
+  // Click on background: clear path highlight
+  w.addEventListener('click', (e: MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.g-node')) return;
+    if (pathNodeIds.size > 0) {
+      pathNodeIds.clear();
+      pathEdgeKeys.clear();
+      selected = null;
+      render();
+    }
   });
 
   window.addEventListener('mousemove', (e: MouseEvent) => {
@@ -416,15 +545,30 @@ export function initEvents(): void {
 export function openSceneGraph(): void {
   $('graph-overlay').classList.add('visible');
   initEvents();
-  // Defer render until after CSS reflow (display:none → flex needs a frame).
-  requestAnimationFrame(() => refreshSceneGraph());
+  requestAnimationFrame(() => {
+    parseGraph();
+    autoLayout();
+    // Try to restore saved pan/zoom; fall back to fitView
+    const hadState = !!localStorage.getItem(GRAPH_STATE_KEY);
+    if (hadState) {
+      restoreGraphState();
+      render();
+    } else {
+      render();
+      fitView();
+    }
+  });
 }
 
 export function closeSceneGraph(): void {
+  saveGraphState();
   $('graph-overlay').classList.remove('visible');
 }
 
 export function refreshSceneGraph(): void {
+  pathNodeIds.clear();
+  pathEdgeKeys.clear();
+  selected = null;
   parseGraph();
   autoLayout();
   render();

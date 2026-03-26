@@ -5,18 +5,20 @@
 // creates the editor, and wires all modules together.
 // ---------------------------------------------------------------------------
 
-import { editor, setEditor, tabs, getActiveTab, layoutEditor, saveSession, loadSession, $ } from './state.js';
+import { editor, setEditor, tabs, getActiveTab, layoutEditor, saveSession, loadSession, activeTabId, setActiveTabId, $ } from './state.js';
 import { registerLanguage } from './monaco/language.js';
 import { registerTheme } from './monaco/theme.js';
-import { registerCompletionProvider, registerHoverProvider } from './monaco/completions.js';
+import { registerCompletionProvider, registerHoverProvider, registerCompletionProvider2 } from './monaco/completions.js';
 import { initDecorations, scheduleDecorate } from './features/decorations.js';
 import { scheduleDiagnostics } from './features/diagnostics.js';
 import { registerFoldingProvider } from './features/folding.js';
 import { openTab, closeActiveTab, renderTabs, activateTab } from './ui/tabs.js';
 import { initContextMenu } from './ui/context-menu.js';
+import { initSidebarMenu } from './ui/sidebar.js';
 import { toggleFind, initLocalFind, openGlobalFind, closeGlobalFind, initGlobalFind } from './ui/find.js';
 import { setSaveStatus } from './ui/statusbar.js';
-import { openFolder, newFile, saveFile, loadDemoContent, initFolderInput, scheduleAutoSave } from './files/file-ops.js';
+import { refreshOutline } from './ui/outline.js';
+import { openFolder, newFile, saveFile, loadDemoContent, initFolderInput, scheduleAutoSave, exportProject } from './files/file-ops.js';
 import { openSceneGraph, closeSceneGraph, refreshSceneGraph, fitView, zoomBy } from './graph/scene-graph.js';
 
 declare const require: any;
@@ -33,6 +35,7 @@ require(['vs/editor/editor.main'], function () {
   registerTheme();
   registerCompletionProvider();
   registerHoverProvider();
+  registerCompletionProvider2();
   registerFoldingProvider();
 
   // ── Create editor ───────────────────────────────────────────────────────
@@ -84,11 +87,13 @@ require(['vs/editor/editor.main'], function () {
     scheduleAutoSave();
     scheduleDecorate();
     scheduleDiagnostics();
+    refreshOutline();
   });
 
   ed.onDidChangeModel(() => {
     scheduleDecorate();
     scheduleDiagnostics();
+    refreshOutline();
   });
 
   // ── Restore session or load demo ────────────────────────────────────────
@@ -97,7 +102,6 @@ require(['vs/editor/editor.main'], function () {
     saved.tabs.forEach(st => {
       openTab(st.name, st.content);
     });
-    // Activate the tab that was active before refresh
     if (saved.activeIndex >= 0 && saved.activeIndex < tabs.length) {
       activateTab(tabs[saved.activeIndex].id);
     }
@@ -114,6 +118,7 @@ require(['vs/editor/editor.main'], function () {
   // ── Initial passes ──────────────────────────────────────────────────────
   scheduleDecorate();
   scheduleDiagnostics();
+  refreshOutline();
   window.addEventListener('resize', layoutEditor);
 
   // ── Wire up all button listeners ────────────────────────────────────────
@@ -130,6 +135,7 @@ require(['vs/editor/editor.main'], function () {
   $('btn-settings').addEventListener('click', toggleSettings);
   $('settings-close-btn').addEventListener('click', toggleSettings);
   $('btn-graph').addEventListener('click', openSceneGraph);
+  $('btn-export').addEventListener('click', exportProject);
 
   // Welcome buttons
   $('w-btn-open').addEventListener('click', openFolder);
@@ -149,6 +155,12 @@ require(['vs/editor/editor.main'], function () {
   // Variable tracker toggle
   $('btn-toggle-vt').addEventListener('click', () => {
     $('var-tracker').classList.toggle('visible');
+  });
+
+  // Outline panel toggle
+  $('btn-toggle-outline').addEventListener('click', () => {
+    $('outline-panel').classList.toggle('visible');
+    if ($('outline-panel').classList.contains('visible')) refreshOutline();
   });
 
   // Sidebar resize
@@ -174,7 +186,6 @@ require(['vs/editor/editor.main'], function () {
   $('g-refresh').addEventListener('click', refreshSceneGraph);
   $('g-fit').addEventListener('click', () => fitView());
   $('g-layout').addEventListener('click', () => {
-    // Need to reimport to call autoLayout + render + fitView
     import('./graph/scene-graph.js').then(g => { g.autoLayout(); g.render(); g.fitView(); });
   });
   $('g-zin').addEventListener('click', () => zoomBy(1));
@@ -183,8 +194,9 @@ require(['vs/editor/editor.main'], function () {
   // File input wiring
   initFolderInput();
 
-  // Context menu
+  // Context menus
   initContextMenu();
+  initSidebarMenu();
 
   // Find bars
   initLocalFind();
@@ -203,6 +215,17 @@ require(['vs/editor/editor.main'], function () {
     if (e.key === 'Escape') {
       if ($('gfr-overlay').classList.contains('visible')) closeGlobalFind();
       if ($('graph-overlay').classList.contains('visible')) closeSceneGraph();
+    }
+
+    // Ctrl+Tab / Ctrl+Shift+Tab: cycle through tabs
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Tab') {
+      e.preventDefault();
+      if (tabs.length < 2) return;
+      const currentIdx = tabs.findIndex(t => t.id === activeTabId);
+      const nextIdx = e.shiftKey
+        ? (currentIdx - 1 + tabs.length) % tabs.length
+        : (currentIdx + 1) % tabs.length;
+      activateTab(tabs[nextIdx].id);
     }
   });
 });

@@ -47,7 +47,7 @@ console.log('\n── 1a. DOM ID coverage: all $() calls resolve ─────
 
 const EXPECTED_IDS = [
   // Toolbar
-  'btn-open', 'btn-new', 'btn-save', 'btn-find', 'btn-global-find',
+  'btn-open', 'btn-new', 'btn-save', 'btn-import', 'btn-global-find',
   'btn-problems', 'btn-graph', 'btn-settings',
   'tb-problems-label',
   // Sidebar

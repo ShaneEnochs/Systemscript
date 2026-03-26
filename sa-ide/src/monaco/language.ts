@@ -47,9 +47,9 @@ export const T = {
  * Register the `sa-script` language and its Monarch tokenizer with Monaco.
  *
  * FIX: Sub-states now pop on both Unix (LF) and Windows (CRLF) endings.
- * Without the `\r$` pop rule, a trailing carriage return could be consumed
- * by the catch-all and leave Monarch stuck in a sub-state, causing subsequent
- * command lines (for example repeated `*temp`) to lose command highlighting.
+ * Without an explicit `\r$` pop rule, trailing carriage returns in CRLF
+ * files can be consumed by the catch-all and leave Monarch stuck in a
+ * sub-state, causing subsequent command lines to lose command highlighting.
  */
 export function registerLanguage(): void {
   monaco.languages.register({ id: 'sa-script' });

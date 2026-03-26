@@ -1,9 +1,9 @@
 // ---------------------------------------------------------------------------
-// file-ops.ts — File I/O: open folder, save, new file, templates, demo.
+// file-ops.ts — File I/O: open files, save, new file, templates, demo.
 // ---------------------------------------------------------------------------
 
-import { tabs, getActiveTab, fileMap, saveSession, $ } from '../state.js';
-import { openTab, renderTabs, closeTab } from '../ui/tabs.js';
+import { tabs, getActiveTab, fileMap, saveSession, $, editor, setActiveTabId } from '../state.js';
+import { openTab, renderTabs, closeTab, activateTab } from '../ui/tabs.js';
 import { renderSidebar, loadSidebarFile } from '../ui/sidebar.js';
 import { setSaveStatus } from '../ui/statusbar.js';
 import type { FileEntry } from '../state.js';
@@ -22,15 +22,17 @@ export function scheduleAutoSave(): void {
   }, autoSaveDelay);
 }
 
-// ── Open folder ───────────────────────────────────────────────────────────
+// ── Open files ────────────────────────────────────────────────────────────
 
-export function openFolder(): void {
+export function openFiles(): void {
   $('folder-input').click();
 }
 
-export function initFolderInput(): void {
-  $('folder-input').addEventListener('change', function (this: HTMLInputElement) {
+export function initFileInput(): void {
+  $('folder-input').addEventListener('change', async function (this: HTMLInputElement) {
     const files = Array.from(this.files || []).filter(f => f.name.endsWith('.txt'));
+    if (!files.length) return;
+
     const order = ['startup.txt', 'stats.txt', 'skills.txt', 'items.txt', 'procedures.txt'];
     files.sort((a, b) => {
       const ai = order.indexOf(a.name), bi = order.indexOf(b.name);
@@ -40,13 +42,16 @@ export function initFolderInput(): void {
       return a.name.localeCompare(b.name);
     });
 
-    const entries: FileEntry[] = files.map(f => ({ name: f.name, file: f, content: undefined }));
-    fileMap.clear();
+    const entries: FileEntry[] = await Promise.all(files.map(async (f) => ({ name: f.name, file: f, content: await f.text() })));
     entries.forEach(e => fileMap.set(e.name, e));
-    renderSidebar(entries);
+    renderSidebar([...fileMap.values()]);
 
     const startup = entries.find(e => e.name === 'startup.txt');
-    if (startup) loadSidebarFile(startup);
+    if (startup) {
+      loadSidebarFile(startup);
+    } else {
+      loadSidebarFile(entries[0]);
+    }
     this.value = '';
   });
 }
@@ -116,32 +121,128 @@ export function deleteFile(name: string): void {
   setSaveStatus(`Deleted ${name}`);
 }
 
-// ── Export project ────────────────────────────────────────────────────────
+// ── Export/import project string ──────────────────────────────────────────
 
-export function exportProject(): void {
+function collectBundle(): Record<string, string> {
   const bundle: Record<string, string> = {};
-  // Collect from tabs first (have latest content)
-  for (const tab of tabs) {
-    bundle[tab.name] = tab.model.getValue();
-  }
-  // Fill in any files not open as tabs
+  for (const tab of tabs) bundle[tab.name] = tab.model.getValue();
   for (const [name, entry] of fileMap.entries()) {
-    if (!(name in bundle) && entry.content !== undefined) {
-      bundle[name] = entry.content;
-    }
+    if (!(name in bundle) && entry.content !== undefined) bundle[name] = entry.content;
   }
-  if (Object.keys(bundle).length === 0) {
-    alert('No files to export. Open a project first.');
+  return bundle;
+}
+
+function openStringModal(mode: 'export' | 'import', value = ''): void {
+  $('string-modal').classList.add('visible');
+  $('string-modal-title').textContent = mode === 'export' ? 'Export Project String' : 'Import Project String';
+  $('string-modal-desc').textContent = mode === 'export'
+    ? 'Copy this string to save or share your project.'
+    : 'Paste a previously exported project string and click Load.';
+  const ta = $('string-modal-text') as HTMLTextAreaElement;
+  ta.value = value;
+  ta.readOnly = mode === 'export';
+  $('string-modal-copy').style.display = mode === 'export' ? '' : 'none';
+  $('string-modal-load').style.display = mode === 'import' ? '' : 'none';
+  ta.focus();
+  ta.select();
+}
+
+function closeStringModal(): void {
+  $('string-modal').classList.remove('visible');
+}
+
+function resetWorkspace(): void {
+  for (const tab of [...tabs]) tab.model.dispose();
+  tabs.splice(0, tabs.length);
+  setActiveTabId(null);
+  if (editor) editor.setModel(null);
+  renderTabs();
+}
+
+function applyBundle(bundle: Record<string, string>): void {
+  const entries = Object.entries(bundle)
+    .filter(([name]) => name.toLowerCase().endsWith('.txt'))
+    .map(([name, content]) => ({ name, content }));
+
+  if (!entries.length) {
+    alert('No .txt files found in imported data.');
     return;
   }
-  const json = JSON.stringify(bundle, null, 2);
-  const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'sa-project.json';
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+
+  const order = ['startup.txt', 'stats.txt', 'skills.txt', 'items.txt', 'procedures.txt'];
+  entries.sort((a, b) => {
+    const ai = order.indexOf(a.name), bi = order.indexOf(b.name);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  resetWorkspace();
+  fileMap.clear();
+  entries.forEach(e => fileMap.set(e.name, { name: e.name, content: e.content }));
+  renderSidebar([...fileMap.values()]);
+
+  entries.forEach(e => openTab(e.name, e.content));
+  const startupTab = tabs.find(t => t.name === 'startup.txt');
+  if (startupTab) activateTab(startupTab.id);
+
+  saveSession();
+  setSaveStatus(`Imported ${entries.length} files`);
+}
+
+export function exportProject(): void {
+  const bundle = collectBundle();
+  if (!Object.keys(bundle).length) {
+    alert('No files to export. Open or create files first.');
+    return;
+  }
+  const payload = JSON.stringify({ sa: true, version: 1, files: bundle });
+  const encoded = `SAIDE:${btoa(unescape(encodeURIComponent(payload)))}`;
+  openStringModal('export', encoded);
   setSaveStatus(`Exported ${Object.keys(bundle).length} files`);
+}
+
+export function openImportModal(): void {
+  openStringModal('import');
+}
+
+export function importProjectFromString(raw: string): void {
+  const text = raw.trim();
+  if (!text) return;
+  try {
+    let json = text;
+    if (text.startsWith('SAIDE:')) {
+      json = decodeURIComponent(escape(atob(text.slice(6))));
+    }
+    const parsed = JSON.parse(json);
+    const files = parsed?.files && typeof parsed.files === 'object' ? parsed.files : parsed;
+    applyBundle(files as Record<string, string>);
+    closeStringModal();
+  } catch {
+    alert('Could not parse import string.');
+  }
+}
+
+export function initStringModal(): void {
+  $('string-modal-close').addEventListener('click', closeStringModal);
+  $('string-modal').addEventListener('click', (e) => {
+    if (e.target === $('string-modal')) closeStringModal();
+  });
+  $('string-modal-copy').addEventListener('click', async () => {
+    const ta = $('string-modal-text') as HTMLTextAreaElement;
+    try {
+      await navigator.clipboard.writeText(ta.value);
+      setSaveStatus('Export string copied');
+    } catch {
+      ta.select();
+      document.execCommand('copy');
+      setSaveStatus('Export string copied');
+    }
+  });
+  $('string-modal-load').addEventListener('click', () => {
+    importProjectFromString(($('string-modal-text') as HTMLTextAreaElement).value);
+  });
 }
 
 // ── Templates ─────────────────────────────────────────────────────────────

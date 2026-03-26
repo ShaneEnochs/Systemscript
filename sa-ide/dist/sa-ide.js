@@ -235,6 +235,7 @@
   // src/graph/scene-graph.ts
   var scene_graph_exports = {};
   __export(scene_graph_exports, {
+    addGraphNode: () => addGraphNode,
     autoLayout: () => autoLayout,
     closeSceneGraph: () => closeSceneGraph,
     fitView: () => fitView,
@@ -248,6 +249,65 @@
   function s2c(sx, sy) {
     const r = wrap().getBoundingClientRect();
     return [(sx - r.left - panX) / scale, (sy - r.top - panY) / scale];
+  }
+  function sceneTemplate(fileName) {
+    const stem = fileName.replace(/\.txt$/i, "");
+    const title = stem.charAt(0).toUpperCase() + stem.slice(1);
+    return [
+      `// ${fileName}`,
+      "",
+      `*title [Scene] ${title}`,
+      "",
+      "Write your narrative here.",
+      "",
+      "*choice",
+      "  #Continue.",
+      "    *finish"
+    ].join("\n");
+  }
+  function normalizeSceneFileName(raw) {
+    const stem = raw.trim().replace(/\.txt$/i, "").replace(/\s+/g, "_").toLowerCase();
+    return `${stem || "new_scene"}.txt`;
+  }
+  function openOrCreateSceneFile(fileName) {
+    const fname = normalizeSceneFileName(fileName);
+    const existing = tabs.find((t) => t.name === fname);
+    if (existing) {
+      activateTab(existing.id);
+      return;
+    }
+    const entry = fileMap.get(fname);
+    if (entry?.content !== void 0) {
+      openTab(fname, entry.content);
+      return;
+    }
+    if (entry?.file) {
+      entry.file.text().then((content2) => {
+        entry.content = content2;
+        openTab(fname, content2);
+      });
+      return;
+    }
+    const content = sceneTemplate(fname);
+    fileMap.set(fname, { name: fname, content });
+    openTab(fname, content);
+  }
+  function addGraphNode() {
+    const base = `scene_${nodes.length + 1}`;
+    const raw = prompt("New scene filename:", `${base}.txt`);
+    if (!raw) return;
+    const fname = normalizeSceneFileName(raw);
+    if (fileMap.has(fname) || tabs.some((t) => t.name === fname)) {
+      openOrCreateSceneFile(fname);
+      return;
+    }
+    const content = sceneTemplate(fname);
+    fileMap.set(fname, { name: fname, content });
+    openTab(fname, content);
+    parseGraph();
+    autoLayout();
+    render();
+    fitView();
   }
   function parseGraph() {
     nodes = [];
@@ -480,14 +540,7 @@
       });
       el.addEventListener("dblclick", (e) => {
         e.stopPropagation();
-        if (n.ghost) return;
-        const existing = tabs.find((t) => t.name === n.name);
-        if (existing) {
-          activateTab(existing.id);
-        } else {
-          const f = fileMap.get(n.name);
-          if (f?.content !== void 0) openTab(n.name, f.content);
-        }
+        openOrCreateSceneFile(n.name);
       });
       canvasEl().appendChild(el);
     });
@@ -2646,6 +2699,7 @@ This removes it from the session. The original file on disk is unaffected.`)) re
       resizeHandle.classList.remove("dragging");
     });
     $("g-close").addEventListener("click", closeSceneGraph);
+    $("g-add").addEventListener("click", addGraphNode);
     $("g-refresh").addEventListener("click", refreshSceneGraph);
     $("g-fit").addEventListener("click", () => fitView());
     $("g-layout").addEventListener("click", () => {

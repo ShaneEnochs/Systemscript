@@ -184,6 +184,7 @@ require(['vs/editor/editor.main'], function () {
 
   // Scene graph buttons
   $('g-close').addEventListener('click', closeSceneGraph);
+  $('g-add').addEventListener('click', addGraphNode);
   $('g-refresh').addEventListener('click', refreshSceneGraph);
   $('g-fit').addEventListener('click', () => fitView());
   $('g-layout').addEventListener('click', () => {

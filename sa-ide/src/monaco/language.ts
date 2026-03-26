@@ -46,10 +46,10 @@ export const T = {
 /**
  * Register the `sa-script` language and its Monarch tokenizer with Monaco.
  *
- * FIX (v2): Every sub-state has a `[/./, '']` catch-all BEFORE the
- * `[/$/, '', '@pop']` rule.  Monarch's `$` anchor doesn't fire when there
- * are still unmatched characters on the line, which caused the original
- * tokenizer to get stuck in a sub-state and mis-colour all subsequent lines.
+ * FIX: Sub-states now pop on both Unix (LF) and Windows (CRLF) endings.
+ * Without an explicit `\r$` pop rule, trailing carriage returns in CRLF
+ * files can be consumed by the catch-all and leave Monarch stuck in a
+ * sub-state, causing subsequent command lines to lose command highlighting.
  */
 export function registerLanguage(): void {
   monaco.languages.register({ id: 'sa-script' });
@@ -125,6 +125,7 @@ export function registerLanguage(): void {
 
       // ── Sub-states ──────────────────────────────────────────────
       after_declare: [
+        [/\r$/, '', '@pop'],
         [/$/, '', '@pop'],
         [/\s+/, ''],
         [/[a-zA-Z_][\w]*/, { token: T.VARNAME, next: '@after_generic' }],
@@ -132,36 +133,42 @@ export function registerLanguage(): void {
         [/./, ''],
       ],
       after_varname: [
+        [/\r$/, '', '@pop'],
         [/$/, '', '@pop'],
         [/\s+/, ''],
         [/[a-zA-Z_][\w]*/, { token: T.VARNAME, next: '@after_generic' }],
         [/./, ''],
       ],
       after_assign: [
+        [/\r$/, '', '@pop'],
         [/$/, '', '@pop'],
         [/\s+/, ''],
         [/[a-zA-Z_][\w]*/, { token: T.VARNAME, next: '@after_expr' }],
         [/./, ''],
       ],
       after_scenename: [
+        [/\r$/, '', '@pop'],
         [/$/, '', '@pop'],
         [/\s+/, ''],
         [/[a-zA-Z_][\w.]*/, { token: T.SCENENAME, next: '@after_generic' }],
         [/./, ''],
       ],
       after_labelname: [
+        [/\r$/, '', '@pop'],
         [/$/, '', '@pop'],
         [/\s+/, ''],
         [/[a-zA-Z_][\w]*/, { token: T.LABELNAME, next: '@after_generic' }],
         [/./, ''],
       ],
       after_procname: [
+        [/\r$/, '', '@pop'],
         [/$/, '', '@pop'],
         [/\s+/, ''],
         [/[a-zA-Z_][\w]*/, { token: T.PROCNAME, next: '@after_generic' }],
         [/./, ''],
       ],
       after_expr: [
+        [/\r$/, '', '@pop'],
         [/$/, '', '@pop'],
         [/\s+/, ''],
         [/[()]/, T.EXPR_OPEN],
@@ -174,6 +181,7 @@ export function registerLanguage(): void {
         [/./, ''],
       ],
       after_generic: [
+        [/\r$/, '', '@pop'],
         [/$/, '', '@pop'],
         [/\$\{[a-zA-Z_][\w]*\}/, T.INTERP],
         [/\{(?:they|them|their|theirs|themself|They|Them|Their|Theirs|Themself)\}/, T.PRONOUN],
@@ -184,6 +192,7 @@ export function registerLanguage(): void {
         [/./, ''],
       ],
       after_comment: [
+        [/\r$/, '', '@pop'],
         [/$/, '', '@pop'],
         [/.+/, T.COMMENT],
       ],

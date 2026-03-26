@@ -162,7 +162,7 @@ export function registerLanguage(): void {
         [/./, ''],
       ],
       after_expr: [
-        [/$/, '', '@popall'],
+        [/$/, '', '@pop'],
         [/\s+/, ''],
         [/[()]/, T.EXPR_OPEN],
         [/\b(?:and|or|not|true|false)\b/, T.EXPR_KW],
@@ -174,7 +174,7 @@ export function registerLanguage(): void {
         [/./, ''],
       ],
       after_generic: [
-        [/$/, '', '@popall'],
+        [/$/, '', '@pop'],
         [/\$\{[a-zA-Z_][\w]*\}/, T.INTERP],
         [/\{(?:they|them|their|theirs|themself|They|Them|Their|Theirs|Themself)\}/, T.PRONOUN],
         [/"[^"]*"/, T.STR],

@@ -313,5 +313,5 @@ export function scheduleDiagnostics(): void {
     if (!model || !tab) return;
     runDiagnostics(model, tab.name);
     buildVarTracker(model, tab.name);
-  }, 400);
+  }, 120);
 }

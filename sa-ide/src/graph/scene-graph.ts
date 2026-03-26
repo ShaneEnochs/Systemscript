@@ -85,6 +85,71 @@ function s2c(sx: number, sy: number): [number, number] {
   return [(sx - r.left - panX) / scale, (sy - r.top - panY) / scale];
 }
 
+
+function sceneTemplate(fileName: string): string {
+  const stem = fileName.replace(/\.txt$/i, '');
+  const title = stem.charAt(0).toUpperCase() + stem.slice(1);
+  return [
+    `// ${fileName}`,
+    '',
+    `*title [Scene] ${title}`,
+    '',
+    'Write your narrative here.',
+    '',
+    '*choice',
+    '  #Continue.',
+    '    *finish',
+  ].join('\n');
+}
+
+function normalizeSceneFileName(raw: string): string {
+  const stem = raw.trim().replace(/\.txt$/i, '').replace(/\s+/g, '_').toLowerCase();
+  return `${stem || 'new_scene'}.txt`;
+}
+
+function openOrCreateSceneFile(fileName: string): void {
+  const fname = normalizeSceneFileName(fileName);
+  const existing = tabs.find(t => t.name === fname);
+  if (existing) { activateTab(existing.id); return; }
+
+  const entry = fileMap.get(fname);
+  if (entry?.content !== undefined) {
+    openTab(fname, entry.content);
+    return;
+  }
+
+  if (entry?.file) {
+    entry.file.text().then((content) => {
+      entry.content = content;
+      openTab(fname, content);
+    });
+    return;
+  }
+
+  const content = sceneTemplate(fname);
+  fileMap.set(fname, { name: fname, content });
+  openTab(fname, content);
+}
+
+export function addGraphNode(): void {
+  const base = `scene_${nodes.length + 1}`;
+  const raw = prompt('New scene filename:', `${base}.txt`);
+  if (!raw) return;
+  const fname = normalizeSceneFileName(raw);
+  if (fileMap.has(fname) || tabs.some(t => t.name === fname)) {
+    openOrCreateSceneFile(fname);
+    return;
+  }
+
+  const content = sceneTemplate(fname);
+  fileMap.set(fname, { name: fname, content });
+  openTab(fname, content);
+  parseGraph();
+  autoLayout();
+  render();
+  fitView();
+}
+
 // ── Parser ────────────────────────────────────────────────────────────────
 
 export function parseGraph(): void {
@@ -93,7 +158,10 @@ export function parseGraph(): void {
   let idC = 1;
   const nameToId: Record<string, number> = {};
 
-  const sources = tabs.map(t => ({ name: t.name, content: t.model.getValue() }));
+  const openContents = new Map(tabs.map(t => [t.name, t.model.getValue()] as const));
+  const sources = [...fileMap.values()]
+    .filter(f => f.name.toLowerCase().endsWith('.txt'))
+    .map(f => ({ name: f.name, content: openContents.get(f.name) ?? f.content ?? '' }));
 
   function fileRole(n: string): string {
     if (n === 'startup.txt')    return 'startup';
@@ -330,17 +398,10 @@ function renderNodes(): void {
       render();
     });
 
-    // Double click: open scene file in editor
+    // Double click: open scene file in editor (or create if ghost)
     el.addEventListener('dblclick', (e: MouseEvent) => {
       e.stopPropagation();
-      if (n.ghost) return;
-      const existing = tabs.find(t => t.name === n.name);
-      if (existing) {
-        activateTab(existing.id);
-      } else {
-        const f = fileMap.get(n.name);
-        if (f?.content !== undefined) openTab(n.name, f.content);
-      }
+      openOrCreateSceneFile(n.name);
     });
 
     canvasEl().appendChild(el);

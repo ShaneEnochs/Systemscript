@@ -15,7 +15,7 @@
     <div class="toolbar-sep"></div>
     <button class="tb-btn primary" id="btn-open">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2 3.5A1.5 1.5 0 013.5 2h3.086a1.5 1.5 0 011.06.44l.915.914H12.5A1.5 1.5 0 0114 4.854V12.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 12.5V3.5z" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>
-      Open Folder
+      Open File
     </button>
     <button class="tb-btn" id="btn-new">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="3" y="2" width="10" height="12" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 5.5v5M5.5 8h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
@@ -25,15 +25,12 @@
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 2h8l2 2v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" stroke-width="1.2" fill="none"/><rect x="5" y="2" width="4" height="3" rx="0.5" stroke="currentColor" stroke-width="1.2"/><rect x="4" y="8" width="8" height="4" rx="0.5" stroke="currentColor" stroke-width="1.2"/></svg>
       Save
     </button>
-    <button class="tb-btn" id="btn-export" title="Export all files as JSON bundle">
+    <button class="tb-btn" id="btn-export" title="Export all files as string">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 2v9M5 8l3 3 3-3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 13h12" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       Export
     </button>
+    <button class="tb-btn" id="btn-import" title="Import project from string">Import</button>
     <div class="toolbar-sep"></div>
-    <button class="tb-btn" id="btn-find">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="6.5" cy="6.5" r="4" stroke="currentColor" stroke-width="1.2"/><path d="M9.5 9.5l3.5 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-      Find
-    </button>
     <button class="tb-btn" id="btn-global-find">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="6" cy="6" r="3.5" stroke="currentColor" stroke-width="1.2"/><path d="M8.5 8.5l3.5 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M3 12h6M3 14h4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
       Global
@@ -58,7 +55,7 @@
     <div id="sidebar">
       <div class="sidebar-header">
         <span>Project Files</span>
-        <button class="sidebar-header-btn" id="sb-btn-open" title="Open folder">
+        <button class="sidebar-header-btn" id="sb-btn-open" title="Open file">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2 3.5A1.5 1.5 0 013.5 2h3.086a1.5 1.5 0 011.06.44l.915.914H12.5A1.5 1.5 0 0114 4.854V12.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 12.5V3.5z" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>
         </button>
         <button class="sidebar-header-btn" id="sb-btn-new" title="New file">
@@ -71,7 +68,7 @@
             <path d="M6 7a2 2 0 012-2h7.172a2 2 0 011.414.586l6.828 6.828A2 2 0 0124 13.828V25a2 2 0 01-2 2H8a2 2 0 01-2-2V7z" stroke="currentColor" stroke-width="1.5" fill="none"/>
             <path d="M15 5v7a1 1 0 001 1h7" stroke="currentColor" stroke-width="1.5"/>
           </svg>
-          <p>Open a project folder or load the demo to begin</p>
+          <p>Open files or load the demo to begin</p>
         </div>
       </div>
 
@@ -110,7 +107,7 @@
           <div class="welcome-title"><strong>System Awakening</strong> Script Editor</div>
           <div class="welcome-sub">A dedicated editor for your interactive fiction engine</div>
           <div class="welcome-actions">
-            <button class="welcome-btn primary" id="w-btn-open">Open Project Folder</button>
+            <button class="welcome-btn primary" id="w-btn-open">Open File</button>
             <button class="welcome-btn" id="w-btn-new">New File</button>
             <button class="welcome-btn" id="w-btn-demo">Load Demo</button>
           </div>
@@ -184,7 +181,8 @@
   <div id="graph-shell">
     <div id="graph-toolbar">
       <span class="graph-brand">Scene Graph</span>
-      <button class="g-btn primary" id="g-refresh">↻ Refresh</button>
+      <button class="g-btn primary" id="g-add">+ Node</button>
+      <button class="g-btn" id="g-refresh">↻ Refresh</button>
       <button class="g-btn" id="g-fit">Fit</button>
       <button class="g-btn" id="g-layout">Layout</button>
       <div style="width:1px;height:20px;background:#d4cfc7;margin:0 4px"></div>
@@ -264,6 +262,20 @@
   </div>
 </div>
 
+
+<!-- String import/export modal -->
+<div id="string-modal">
+  <div id="string-modal-box">
+    <div id="string-modal-header"><h3 id="string-modal-title">Export Project String</h3><button id="string-modal-close">✕</button></div>
+    <p id="string-modal-desc"></p>
+    <textarea id="string-modal-text" spellcheck="false"></textarea>
+    <div id="string-modal-actions">
+      <button class="tb-btn" id="string-modal-copy">Copy</button>
+      <button class="tb-btn primary" id="string-modal-load" style="display:none">Load</button>
+    </div>
+  </div>
+</div>
+
 <!-- Tab context menu -->
 <div id="context-menu">
   <div class="ctx-item" data-action="close">Close tab <span class="ctx-kbd">Ctrl+W</span></div>
@@ -281,7 +293,7 @@
 </div>
 
 <!-- Hidden file inputs -->
-<input type="file" id="folder-input" webkitdirectory style="display:none">
+<input type="file" id="folder-input" multiple accept=".txt,text/plain" style="display:none">
 
 <!-- Monaco AMD loader (CDN) then our bundled app -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>

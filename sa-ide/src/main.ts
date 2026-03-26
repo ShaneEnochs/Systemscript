@@ -5,7 +5,7 @@
 // creates the editor, and wires all modules together.
 // ---------------------------------------------------------------------------
 
-import { editor, setEditor, tabs, getActiveTab, layoutEditor, saveSession, loadSession, activeTabId, setActiveTabId, $ } from './state.js';
+import { editor, setEditor, tabs, getActiveTab, layoutEditor, saveSession, loadSession, activeTabId, setActiveTabId, fileMap, $ } from './state.js';
 import { registerLanguage } from './monaco/language.js';
 import { registerTheme } from './monaco/theme.js';
 import { registerCompletionProvider, registerHoverProvider, registerCompletionProvider2 } from './monaco/completions.js';
@@ -14,12 +14,12 @@ import { scheduleDiagnostics } from './features/diagnostics.js';
 import { registerFoldingProvider } from './features/folding.js';
 import { openTab, closeActiveTab, renderTabs, activateTab } from './ui/tabs.js';
 import { initContextMenu } from './ui/context-menu.js';
-import { initSidebarMenu } from './ui/sidebar.js';
+import { initSidebarMenu, renderSidebar } from './ui/sidebar.js';
 import { toggleFind, initLocalFind, openGlobalFind, closeGlobalFind, initGlobalFind } from './ui/find.js';
 import { setSaveStatus } from './ui/statusbar.js';
 import { refreshOutline } from './ui/outline.js';
-import { openFolder, newFile, saveFile, loadDemoContent, initFolderInput, scheduleAutoSave, exportProject } from './files/file-ops.js';
-import { openSceneGraph, closeSceneGraph, refreshSceneGraph, fitView, zoomBy } from './graph/scene-graph.js';
+import { openFiles, newFile, saveFile, loadDemoContent, initFileInput, scheduleAutoSave, exportProject, openImportModal, initStringModal } from './files/file-ops.js';
+import { openSceneGraph, closeSceneGraph, refreshSceneGraph, fitView, zoomBy, addGraphNode } from './graph/scene-graph.js';
 
 declare const require: any;
 
@@ -107,6 +107,7 @@ require(['vs/editor/editor.main'], function () {
     }
     $('welcome').style.display = 'none';
   }
+  if (tabs.length) renderSidebar([...fileMap.values()]);
 
   // ── Keybindings ─────────────────────────────────────────────────────────
   const monaco = (window as any).monaco;
@@ -124,21 +125,21 @@ require(['vs/editor/editor.main'], function () {
   // ── Wire up all button listeners ────────────────────────────────────────
 
   // Toolbar
-  $('btn-open').addEventListener('click', openFolder);
-  $('sb-btn-open').addEventListener('click', openFolder);
+  $('btn-open').addEventListener('click', openFiles);
+  $('sb-btn-open').addEventListener('click', openFiles);
   $('btn-new').addEventListener('click', newFile);
   $('sb-btn-new').addEventListener('click', newFile);
   $('btn-save').addEventListener('click', saveFile);
-  $('btn-find').addEventListener('click', toggleFind);
-  $('btn-problems').addEventListener('click', toggleProblems);
+    $('btn-problems').addEventListener('click', toggleProblems);
   $('problems-close').addEventListener('click', toggleProblems);
   $('btn-settings').addEventListener('click', toggleSettings);
   $('settings-close-btn').addEventListener('click', toggleSettings);
   $('btn-graph').addEventListener('click', openSceneGraph);
   $('btn-export').addEventListener('click', exportProject);
+  $('btn-import').addEventListener('click', openImportModal);
 
   // Welcome buttons
-  $('w-btn-open').addEventListener('click', openFolder);
+  $('w-btn-open').addEventListener('click', openFiles);
   $('w-btn-new').addEventListener('click', newFile);
   $('w-btn-demo').addEventListener('click', loadDemoContent);
 
@@ -183,6 +184,7 @@ require(['vs/editor/editor.main'], function () {
 
   // Scene graph buttons
   $('g-close').addEventListener('click', closeSceneGraph);
+  $('g-add').addEventListener('click', addGraphNode);
   $('g-refresh').addEventListener('click', refreshSceneGraph);
   $('g-fit').addEventListener('click', () => fitView());
   $('g-layout').addEventListener('click', () => {
@@ -192,15 +194,17 @@ require(['vs/editor/editor.main'], function () {
   $('g-zout').addEventListener('click', () => zoomBy(-1));
 
   // File input wiring
-  initFolderInput();
+  initFileInput();
 
   // Context menus
   initContextMenu();
   initSidebarMenu();
+  window.addEventListener('sa-project-files-changed', () => renderSidebar([...fileMap.values()]));
 
   // Find bars
   initLocalFind();
   initGlobalFind();
+  initStringModal();
 
   // Save from context menu
   document.addEventListener('sa-save', () => saveFile());
@@ -210,7 +214,7 @@ require(['vs/editor/editor.main'], function () {
 
   // ── Global key bindings ─────────────────────────────────────────────────
   document.addEventListener('keydown', (e: KeyboardEvent) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'o') { e.preventDefault(); openFolder(); }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'o') { e.preventDefault(); openFiles(); }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') { e.preventDefault(); openGlobalFind(); }
     if (e.key === 'Escape') {
       if ($('gfr-overlay').classList.contains('visible')) closeGlobalFind();

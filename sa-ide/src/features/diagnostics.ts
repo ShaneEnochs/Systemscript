@@ -2,7 +2,7 @@
 // diagnostics.ts — Inline linting, variable tracker, and problems panel.
 // ---------------------------------------------------------------------------
 
-import { editor, getActiveTab, escHtml, jumpToLine, $, tabs } from '../state.js';
+import { editor, getActiveTab, escHtml, jumpToLine, $, tabs, fileMap } from '../state.js';
 
 declare const monaco: typeof import('monaco-editor');
 
@@ -60,8 +60,39 @@ function runDiagnostics(
       '*system block is never closed — add *end_system.');
   });
 
+  // Build set of all known scene file names (for cross-file validation)
+  const knownScenes = new Set<string>();
+  for (const fname of fileMap.keys()) {
+    knownScenes.add(fname.toLowerCase());
+    knownScenes.add(fname.toLowerCase().replace(/\.txt$/i, ''));
+  }
+  for (const tab of tabs) {
+    knownScenes.add(tab.name.toLowerCase());
+    knownScenes.add(tab.name.toLowerCase().replace(/\.txt$/i, ''));
+  }
+
+  // Build declared variable set from all open tabs (for undefined-var detection)
+  const declaredVars = new Set<string>();
+  for (const tab of tabs) {
+    const content = tab.model.getValue();
+    for (const line of content.split('\n')) {
+      const t = line.trimStart();
+      const mC = t.match(/^\*create(?:_stat)?\s+([a-zA-Z_]\w*)/);
+      if (mC) declaredVars.add(mC[1].toLowerCase());
+      const mT = t.match(/^\*temp\s+([a-zA-Z_]\w*)/);
+      if (mT) declaredVars.add(mT[1].toLowerCase());
+    }
+  }
+  // Also collect from current model (handles unsaved declarations)
+  lines.forEach(({ trimmed }) => {
+    const mC = trimmed.match(/^\*create(?:_stat)?\s+([a-zA-Z_]\w*)/);
+    if (mC) declaredVars.add(mC[1].toLowerCase());
+    const mT = trimmed.match(/^\*temp\s+([a-zA-Z_]\w*)/);
+    if (mT) declaredVars.add(mT[1].toLowerCase());
+  });
+
   // Pass 2: validate references
-  lines.forEach(({ trimmed, indent, ln }) => {
+  lines.forEach(({ raw, trimmed, indent, ln }) => {
     if (!trimmed || trimmed.startsWith('//')) return;
 
     if (isStartup && /^\*temp\b/.test(trimmed))
@@ -86,6 +117,29 @@ function runDiagnostics(
       }
     }
 
+    // Cross-file: *goto_scene / *gosub_scene validation
+    const mGotoScene = trimmed.match(/^\*goto_scene\s+(\S+)/);
+    if (mGotoScene && knownScenes.size > 0) {
+      const raw2 = mGotoScene[1];
+      const stem = raw2.toLowerCase().replace(/\.txt$/i, '');
+      if (!knownScenes.has(stem) && !knownScenes.has(stem + '.txt')) {
+        const col = indent + 1 + trimmed.indexOf(raw2);
+        addError(ln, col, col + raw2.length,
+          `*goto_scene "${raw2}" — scene not found in project. Open or create "${stem}.txt".`);
+      }
+    }
+
+    const mGosubScene = trimmed.match(/^\*gosub_scene\s+(\S+)/);
+    if (mGosubScene && knownScenes.size > 0) {
+      const raw2 = mGosubScene[1].split(/\s/)[0];
+      const stem = raw2.toLowerCase().replace(/\.txt$/i, '');
+      if (!knownScenes.has(stem) && !knownScenes.has(stem + '.txt')) {
+        const col = indent + 1 + trimmed.indexOf(raw2);
+        addError(ln, col, col + raw2.length,
+          `*gosub_scene "${raw2}" — scene not found in project. Open or create "${stem}.txt".`);
+      }
+    }
+
     if (/^\*(if|elseif|loop)\s*$/.test(trimmed))
       addError(ln, indent + 1, indent + 1 + trimmed.length, `${trimmed.trim()} requires a condition.`);
 
@@ -100,6 +154,20 @@ function runDiagnostics(
       if (!hasOpt)
         addWarning(ln, indent + 1, indent + 1 + trimmed.length,
           '*choice has no options — add at least one # line beneath it.');
+    }
+
+    // Check {varname} interpolations against declared vars (only when vars are known)
+    if (declaredVars.size > 0 && !trimmed.startsWith('*') && !trimmed.startsWith('//')) {
+      const interpRe = /\{([a-zA-Z_]\w*)\}/g;
+      let im: RegExpExecArray | null;
+      while ((im = interpRe.exec(raw)) !== null) {
+        const varname = im[1];
+        if (!declaredVars.has(varname.toLowerCase())) {
+          const col = im.index + 1;
+          addWarning(ln, col, col + im[0].length,
+            `Variable "{${varname}}" may not be declared — check *create or *temp.`);
+        }
+      }
     }
   });
 

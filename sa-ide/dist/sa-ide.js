@@ -225,7 +225,7 @@ __define('./features/diagnostics.js', function(__exports, __req) {
 // ---------------------------------------------------------------------------
 // diagnostics.ts — Inline linting, variable tracker, and problems panel.
 // ---------------------------------------------------------------------------
-const { editor, getActiveTab, escHtml, jumpToLine, $ } = __req('../state.js');
+const { editor, getActiveTab, escHtml, jumpToLine, $, tabs, fileMap } = __req('../state.js');
 const DIAG_OWNER = 'sa-diagnostics';
 let _timer = null;
 // ── Diagnostic runner ─────────────────────────────────────────────────────
@@ -269,8 +269,41 @@ function runDiagnostics(model, filename) {
         const t = lines[sln - 1];
         addError(sln, t.indent + 1, t.indent + 1 + t.trimmed.length, '*system block is never closed — add *end_system.');
     });
+    // Build set of all known scene file names (for cross-file validation)
+    const knownScenes = new Set();
+    for (const fname of fileMap.keys()) {
+        knownScenes.add(fname.toLowerCase());
+        knownScenes.add(fname.toLowerCase().replace(/\.txt$/i, ''));
+    }
+    for (const tab of tabs) {
+        knownScenes.add(tab.name.toLowerCase());
+        knownScenes.add(tab.name.toLowerCase().replace(/\.txt$/i, ''));
+    }
+    // Build declared variable set from all open tabs (for undefined-var detection)
+    const declaredVars = new Set();
+    for (const tab of tabs) {
+        const content = tab.model.getValue();
+        for (const line of content.split('\n')) {
+            const t = line.trimStart();
+            const mC = t.match(/^\*create(?:_stat)?\s+([a-zA-Z_]\w*)/);
+            if (mC)
+                declaredVars.add(mC[1].toLowerCase());
+            const mT = t.match(/^\*temp\s+([a-zA-Z_]\w*)/);
+            if (mT)
+                declaredVars.add(mT[1].toLowerCase());
+        }
+    }
+    // Also collect from current model (handles unsaved declarations)
+    lines.forEach(({ trimmed }) => {
+        const mC = trimmed.match(/^\*create(?:_stat)?\s+([a-zA-Z_]\w*)/);
+        if (mC)
+            declaredVars.add(mC[1].toLowerCase());
+        const mT = trimmed.match(/^\*temp\s+([a-zA-Z_]\w*)/);
+        if (mT)
+            declaredVars.add(mT[1].toLowerCase());
+    });
     // Pass 2: validate references
-    lines.forEach(({ trimmed, indent, ln }) => {
+    lines.forEach(({ raw, trimmed, indent, ln }) => {
         if (!trimmed || trimmed.startsWith('//'))
             return;
         if (isStartup && /^\*temp\b/.test(trimmed))
@@ -291,6 +324,25 @@ function runDiagnostics(model, filename) {
                 addError(ln, col, col + mGosub[1].length, `*gosub references undefined label "${mGosub[1]}".`);
             }
         }
+        // Cross-file: *goto_scene / *gosub_scene validation
+        const mGotoScene = trimmed.match(/^\*goto_scene\s+(\S+)/);
+        if (mGotoScene && knownScenes.size > 0) {
+            const raw2 = mGotoScene[1];
+            const stem = raw2.toLowerCase().replace(/\.txt$/i, '');
+            if (!knownScenes.has(stem) && !knownScenes.has(stem + '.txt')) {
+                const col = indent + 1 + trimmed.indexOf(raw2);
+                addError(ln, col, col + raw2.length, `*goto_scene "${raw2}" — scene not found in project. Open or create "${stem}.txt".`);
+            }
+        }
+        const mGosubScene = trimmed.match(/^\*gosub_scene\s+(\S+)/);
+        if (mGosubScene && knownScenes.size > 0) {
+            const raw2 = mGosubScene[1].split(/\s/)[0];
+            const stem = raw2.toLowerCase().replace(/\.txt$/i, '');
+            if (!knownScenes.has(stem) && !knownScenes.has(stem + '.txt')) {
+                const col = indent + 1 + trimmed.indexOf(raw2);
+                addError(ln, col, col + raw2.length, `*gosub_scene "${raw2}" — scene not found in project. Open or create "${stem}.txt".`);
+            }
+        }
         if (/^\*(if|elseif|loop)\s*$/.test(trimmed))
             addError(ln, indent + 1, indent + 1 + trimmed.length, `${trimmed.trim()} requires a condition.`);
         if (/^\*choice\s*$/.test(trimmed)) {
@@ -308,6 +360,18 @@ function runDiagnostics(model, filename) {
             }
             if (!hasOpt)
                 addWarning(ln, indent + 1, indent + 1 + trimmed.length, '*choice has no options — add at least one # line beneath it.');
+        }
+        // Check {varname} interpolations against declared vars (only when vars are known)
+        if (declaredVars.size > 0 && !trimmed.startsWith('*') && !trimmed.startsWith('//')) {
+            const interpRe = /\{([a-zA-Z_]\w*)\}/g;
+            let im;
+            while ((im = interpRe.exec(raw)) !== null) {
+                const varname = im[1];
+                if (!declaredVars.has(varname.toLowerCase())) {
+                    const col = im.index + 1;
+                    addWarning(ln, col, col + im[0].length, `Variable "{${varname}}" may not be declared — check *create or *temp.`);
+                }
+            }
         }
     });
     monaco.editor.setModelMarkers(model, DIAG_OWNER, markers);
@@ -653,11 +717,12 @@ Object.defineProperty(__exports, 'renderTabs', { get: function() { return render
 
 __define('./ui/sidebar.js', function(__exports, __req) {
 // ---------------------------------------------------------------------------
-// sidebar.ts — File tree panel rendering.
+// sidebar.ts — File tree panel rendering and sidebar file actions.
 // ---------------------------------------------------------------------------
 const { getFileType, $ } = __req('../state.js');
 const { openTab, activateTab } = __req('./tabs.js');
 const { tabs } = __req('../state.js');
+const { deleteFile, renameFile } = __req('../files/file-ops.js');
 function renderSidebar(files) {
     const list = $('file-list');
     const empty = $('sidebar-empty');
@@ -683,11 +748,48 @@ function renderSidebar(files) {
             item.dataset.file = f.name;
             item.innerHTML = `<span class="file-dot" style="background:${ft.color}"></span><span class="filename">${f.name}</span><span class="file-badge">${ft.badge}</span>`;
             item.addEventListener('click', () => loadSidebarFile(f));
+            item.addEventListener('contextmenu', (e) => showSidebarMenu(e, f.name));
             g.appendChild(item);
         });
         list.appendChild(g);
     });
     list.appendChild(empty);
+}
+// ── Sidebar context menu ──────────────────────────────────────────────────
+let _menuTarget = null;
+function showSidebarMenu(e, filename) {
+    e.preventDefault();
+    _menuTarget = filename;
+    const menu = $('sidebar-menu');
+    menu.style.left = e.clientX + 'px';
+    menu.style.top = e.clientY + 'px';
+    menu.classList.add('visible');
+}
+function initSidebarMenu() {
+    document.querySelectorAll('#sidebar-menu .ctx-item').forEach(el => {
+        el.addEventListener('click', () => {
+            const action = el.dataset.action;
+            $('sidebar-menu').classList.remove('visible');
+            if (!_menuTarget)
+                return;
+            if (action === 'rename') {
+                const newName = prompt(`Rename "${_menuTarget}" to:`, _menuTarget);
+                if (newName?.trim() && newName.trim() !== _menuTarget) {
+                    const n = newName.trim().endsWith('.txt') ? newName.trim() : newName.trim() + '.txt';
+                    renameFile(_menuTarget, n);
+                }
+            }
+            if (action === 'delete') {
+                deleteFile(_menuTarget);
+            }
+            _menuTarget = null;
+        });
+    });
+    document.addEventListener('click', (e) => {
+        const menu = $('sidebar-menu');
+        if (!menu.contains(e.target))
+            menu.classList.remove('visible');
+    });
 }
 // updateSidebarSelection lives in state.ts to avoid circular dep with tabs.ts
 function loadSidebarFile(f) {
@@ -711,6 +813,7 @@ function loadSidebarFile(f) {
 }
 
 Object.defineProperty(__exports, 'renderSidebar', { get: function() { return renderSidebar; }, enumerable: true });
+Object.defineProperty(__exports, 'initSidebarMenu', { get: function() { return initSidebarMenu; }, enumerable: true });
 Object.defineProperty(__exports, 'loadSidebarFile', { get: function() { return loadSidebarFile; }, enumerable: true });
 });
 
@@ -718,8 +821,8 @@ __define('./files/file-ops.js', function(__exports, __req) {
 // ---------------------------------------------------------------------------
 // file-ops.ts — File I/O: open folder, save, new file, templates, demo.
 // ---------------------------------------------------------------------------
-const { getActiveTab, fileMap, saveSession, $ } = __req('../state.js');
-const { openTab, renderTabs } = __req('../ui/tabs.js');
+const { tabs, getActiveTab, fileMap, saveSession, $ } = __req('../state.js');
+const { openTab, renderTabs, closeTab } = __req('../ui/tabs.js');
 const { renderSidebar, loadSidebarFile } = __req('../ui/sidebar.js');
 const { setSaveStatus } = __req('../ui/statusbar.js');
 // ── Auto-save ─────────────────────────────────────────────────────────────
@@ -769,7 +872,11 @@ function newFile() {
     if (!name?.trim())
         return;
     const fname = name.trim().endsWith('.txt') ? name.trim() : name.trim() + '.txt';
-    openTab(fname, getFileTemplate(fname));
+    const content = getFileTemplate(fname);
+    const entry = { name: fname, content };
+    fileMap.set(fname, entry);
+    openTab(fname, content);
+    renderSidebar([...fileMap.values()]);
     setSaveStatus('New file');
 }
 // ── Save ──────────────────────────────────────────────────────────────────
@@ -786,6 +893,67 @@ function saveFile() {
     tab.modified = false;
     renderTabs();
     setSaveStatus('Saved — ' + new Date().toLocaleTimeString());
+}
+// ── Rename file ───────────────────────────────────────────────────────────
+function renameFile(oldName, newName) {
+    if (oldName === newName)
+        return;
+    if (fileMap.has(newName)) {
+        alert(`A file named "${newName}" already exists.`);
+        return;
+    }
+    const entry = fileMap.get(oldName);
+    if (!entry)
+        return;
+    fileMap.delete(oldName);
+    entry.name = newName;
+    // Sync content from open tab if present
+    const tab = tabs.find(t => t.name === oldName);
+    if (tab) {
+        entry.content = tab.model.getValue();
+        tab.name = newName;
+        renderTabs();
+    }
+    fileMap.set(newName, entry);
+    renderSidebar([...fileMap.values()]);
+    setSaveStatus(`Renamed to ${newName}`);
+}
+// ── Delete file ───────────────────────────────────────────────────────────
+function deleteFile(name) {
+    if (!confirm(`Delete "${name}"?\n\nThis removes it from the session. The original file on disk is unaffected.`))
+        return;
+    fileMap.delete(name);
+    const tab = tabs.find(t => t.name === name);
+    if (tab)
+        closeTab(tab.id);
+    renderSidebar([...fileMap.values()]);
+    setSaveStatus(`Deleted ${name}`);
+}
+// ── Export project ────────────────────────────────────────────────────────
+function exportProject() {
+    const bundle = {};
+    // Collect from tabs first (have latest content)
+    for (const tab of tabs) {
+        bundle[tab.name] = tab.model.getValue();
+    }
+    // Fill in any files not open as tabs
+    for (const [name, entry] of fileMap.entries()) {
+        if (!(name in bundle) && entry.content !== undefined) {
+            bundle[name] = entry.content;
+        }
+    }
+    if (Object.keys(bundle).length === 0) {
+        alert('No files to export. Open a project first.');
+        return;
+    }
+    const json = JSON.stringify(bundle, null, 2);
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'sa-project.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    setSaveStatus(`Exported ${Object.keys(bundle).length} files`);
 }
 // ── Templates ─────────────────────────────────────────────────────────────
 function getFileTemplate(name) {
@@ -869,6 +1037,9 @@ Object.defineProperty(__exports, 'openFolder', { get: function() { return openFo
 Object.defineProperty(__exports, 'initFolderInput', { get: function() { return initFolderInput; }, enumerable: true });
 Object.defineProperty(__exports, 'newFile', { get: function() { return newFile; }, enumerable: true });
 Object.defineProperty(__exports, 'saveFile', { get: function() { return saveFile; }, enumerable: true });
+Object.defineProperty(__exports, 'renameFile', { get: function() { return renameFile; }, enumerable: true });
+Object.defineProperty(__exports, 'deleteFile', { get: function() { return deleteFile; }, enumerable: true });
+Object.defineProperty(__exports, 'exportProject', { get: function() { return exportProject; }, enumerable: true });
 Object.defineProperty(__exports, 'loadDemoContent', { get: function() { return loadDemoContent; }, enumerable: true });
 });
 
@@ -876,15 +1047,18 @@ __define('./graph/scene-graph.js', function(__exports, __req) {
 // ---------------------------------------------------------------------------
 // scene-graph.ts — Scene graph parser, auto-layout, and interactive renderer.
 //
-// FIX (v2): SVG layer now shares the same CSS transform as the node canvas,
-// so edges always align with nodes.  Edges are drawn in canvas-local coords.
+// FIX (v2): SVG layer shares same CSS transform as node canvas so edges align.
+// v3 improvements: edge coloring, path highlight, dead end detection,
+//   dblclick-to-open, pan/zoom state persistence.
 // ---------------------------------------------------------------------------
 const { tabs, escHtml, fileMap, $ } = __req('../state.js');
-const { activateTab } = __req('../ui/tabs.js');
-const { loadSidebarFile } = __req('../ui/sidebar.js');
+const { activateTab, openTab } = __req('../ui/tabs.js');
 // ── Constants ─────────────────────────────────────────────────────────────
 const NW = 200;
 const NH = 72;
+// Edge colors: blue=goto (direct transfer), orange=gosub (subroutine call)
+const EDGE_GOTO_COLOR = '#2563EB';
+const EDGE_GOSUB_COLOR = '#EA580C';
 const NODE_COLORS = {
     startup: '#1D55C7',
     scene: '#1A7F3C',
@@ -909,6 +1083,11 @@ let panSX = 0;
 let panSY = 0;
 let selected = null;
 let eventsInit = false;
+// Path highlight state
+let pathNodeIds = new Set();
+let pathEdgeKeys = new Set(); // "fromId-toId"
+// Dead end set
+let deadEndIds = new Set();
 // ── DOM refs ──────────────────────────────────────────────────────────────
 const wrap = () => $('graph-canvas-wrap');
 const canvasEl = () => $('graph-canvas');
@@ -1053,6 +1232,55 @@ function autoLayout() {
             n.y = i * VGAP - totalH / 2 + VGAP / 2;
         });
     });
+    // Compute dead ends (nodes with no outgoing edges)
+    const hasOutgoing = new Set(edges.map(e => e.from));
+    deadEndIds = new Set(nodes.filter(n => !hasOutgoing.has(n.id)).map(n => n.id));
+}
+// ── Path computation ──────────────────────────────────────────────────────
+function computePath(targetId) {
+    pathNodeIds.clear();
+    pathEdgeKeys.clear();
+    const startNode = nodes.find(n => n.name === 'startup.txt') || nodes[0];
+    if (!startNode)
+        return;
+    pathNodeIds.add(targetId);
+    if (startNode.id === targetId)
+        return;
+    // Build adjacency
+    const adj = {};
+    nodes.forEach(n => { adj[n.id] = []; });
+    edges.forEach(e => { if (adj[e.from])
+        adj[e.from].push(e.to); });
+    // BFS
+    const prev = {};
+    const visited = new Set([startNode.id]);
+    const queue = [startNode.id];
+    let found = false;
+    let head = 0;
+    while (head < queue.length && !found) {
+        const curr = queue[head++];
+        for (const next of adj[curr] || []) {
+            if (!visited.has(next)) {
+                visited.add(next);
+                prev[next] = curr;
+                if (next === targetId) {
+                    found = true;
+                    break;
+                }
+                queue.push(next);
+            }
+        }
+    }
+    if (found) {
+        let curr = targetId;
+        pathNodeIds.add(curr);
+        while (prev[curr] !== undefined) {
+            const p = prev[curr];
+            pathEdgeKeys.add(`${p}-${curr}`);
+            pathNodeIds.add(p);
+            curr = p;
+        }
+    }
 }
 // ── Rendering ─────────────────────────────────────────────────────────────
 function render() {
@@ -1073,15 +1301,24 @@ function updXform() {
 function renderNodes() {
     canvasEl().innerHTML = '';
     nodes.forEach(n => {
+        const onPath = pathNodeIds.has(n.id);
+        const isDeadEnd = deadEndIds.has(n.id) && !n.ghost;
         const el = document.createElement('div');
-        el.className = 'g-node' + (n.id === selected ? ' g-selected' : '') + (n.ghost ? ' g-unreachable' : '');
+        el.className = [
+            'g-node',
+            n.id === selected ? 'g-selected' : '',
+            n.ghost ? 'g-unreachable' : '',
+            onPath ? 'g-path' : '',
+            isDeadEnd ? 'g-deadend' : '',
+        ].filter(Boolean).join(' ');
         el.dataset.id = String(n.id);
         el.style.left = n.x + 'px';
         el.style.top = n.y + 'px';
         el.style.width = NW + 'px';
         el.style.minHeight = NH + 'px';
         const col = NODE_COLORS[n.role] || NODE_COLORS.unlisted;
-        el.innerHTML = `<div class="g-node-header" style="border-left-color:${col}"><span class="g-node-title">${escHtml(n.label)}</span><span class="g-node-badge" style="color:${col}">${n.ghost ? 'unlisted' : n.role}</span></div>${n.ghost ? '<div class="g-node-body" style="color:#c04800">File not open</div>' : ''}`;
+        const deadEndBadge = isDeadEnd ? '<span class="g-dead-icon" title="Dead end — no outgoing scene links">⊘</span>' : '';
+        el.innerHTML = `<div class="g-node-header" style="border-left-color:${col}"><span class="g-node-title">${escHtml(n.label)}</span>${deadEndBadge}<span class="g-node-badge" style="color:${col}">${n.ghost ? 'unlisted' : n.role}</span></div>${n.ghost ? '<div class="g-node-body" style="color:#c04800">File not open</div>' : ''}`;
         el.addEventListener('mousedown', (e) => {
             e.stopPropagation();
             selected = n.id;
@@ -1093,17 +1330,32 @@ function renderNodes() {
                 nd.classList.toggle('g-selected', nd.dataset.id === String(n.id));
             });
         });
-        el.addEventListener('click', () => {
-            if (!n.ghost) {
-                const tab = tabs.find(t => t.name === n.name);
-                if (tab) {
-                    activateTab(tab.id);
-                }
-                else {
-                    const f = fileMap.get(n.name);
-                    if (f)
-                        loadSidebarFile(f);
-                }
+        // Single click: highlight path from startup to this node
+        el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (selected === n.id && pathNodeIds.size > 0) {
+                // Second click on same node: clear path
+                pathNodeIds.clear();
+                pathEdgeKeys.clear();
+            }
+            else {
+                computePath(n.id);
+            }
+            render();
+        });
+        // Double click: open scene file in editor
+        el.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            if (n.ghost)
+                return;
+            const existing = tabs.find(t => t.name === n.name);
+            if (existing) {
+                activateTab(existing.id);
+            }
+            else {
+                const f = fileMap.get(n.name);
+                if (f?.content !== undefined)
+                    openTab(n.name, f.content);
             }
         });
         canvasEl().appendChild(el);
@@ -1123,18 +1375,24 @@ function renderEdges() {
         const dx = Math.abs(x2 - x1);
         const cp = Math.max(50, dx * 0.4);
         const d = `M${x1},${y1} C${x1 + cp},${y1} ${x2 - cp},${y2} ${x2},${y2}`;
-        const col = edge.kind === 'goto' ? '#1A7F3C' : '#6B21D6';
+        const onPath = pathEdgeKeys.has(`${edge.from}-${edge.to}`);
+        const baseCol = edge.kind === 'goto' ? EDGE_GOTO_COLOR : EDGE_GOSUB_COLOR;
+        const col = onPath ? '#22C55E' : baseCol;
         const dash = edge.kind === 'goto' ? '' : '6 4';
+        const strokeW = onPath ? '3' : '2';
+        const opacity = onPath ? '1' : '0.7';
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.classList.add('g-edge');
         path.setAttribute('d', d);
         path.setAttribute('fill', 'none');
         path.setAttribute('stroke', col);
-        path.setAttribute('stroke-width', '2');
-        path.setAttribute('stroke-opacity', '0.7');
+        path.setAttribute('stroke-width', strokeW);
+        path.setAttribute('stroke-opacity', opacity);
         if (dash)
             path.setAttribute('stroke-dasharray', dash);
         path.setAttribute('marker-end', `url(#arr-${edge.kind})`);
+        path.dataset.from = String(edge.from);
+        path.dataset.to = String(edge.to);
         svgEl().appendChild(path);
     });
 }
@@ -1169,6 +1427,12 @@ function updStatus() {
     $('g-stat-edges').textContent = edges.length + ' connection' + (edges.length !== 1 ? 's' : '');
     const ghosts = nodes.filter(n => n.ghost).length;
     $('g-stat-unreachable').textContent = ghosts ? `${ghosts} unlisted` : '';
+    const deadEl = $('g-stat-deadends');
+    if (deadEl) {
+        const realDeadEnds = [...deadEndIds].filter(id => !nodes.find(n => n.id === id)?.ghost).length;
+        deadEl.textContent = realDeadEnds ? `${realDeadEnds} dead end${realDeadEnds !== 1 ? 's' : ''}` : '';
+        deadEl.style.color = realDeadEnds ? '#EA580C' : '';
+    }
 }
 // ── Fit view and zoom ─────────────────────────────────────────────────────
 function fitView() {
@@ -1202,6 +1466,29 @@ function zoomBy(dir) {
     panY = h - (h - panY) * (scale / old);
     render();
 }
+// ── Graph state persistence ───────────────────────────────────────────────
+const GRAPH_STATE_KEY = 'sa-graph-state';
+function saveGraphState() {
+    try {
+        localStorage.setItem(GRAPH_STATE_KEY, JSON.stringify({ panX, panY, scale }));
+    }
+    catch { /* ignore */ }
+}
+function restoreGraphState() {
+    try {
+        const raw = localStorage.getItem(GRAPH_STATE_KEY);
+        if (!raw)
+            return;
+        const s = JSON.parse(raw);
+        if (typeof s.panX === 'number')
+            panX = s.panX;
+        if (typeof s.panY === 'number')
+            panY = s.panY;
+        if (typeof s.scale === 'number')
+            scale = Math.min(3, Math.max(0.1, s.scale));
+    }
+    catch { /* ignore */ }
+}
 // ── Pointer events ────────────────────────────────────────────────────────
 function initEvents() {
     if (eventsInit)
@@ -1215,6 +1502,17 @@ function initEvents() {
         panSX = e.clientX - panX;
         panSY = e.clientY - panY;
         w.classList.add('dragging');
+    });
+    // Click on background: clear path highlight
+    w.addEventListener('click', (e) => {
+        if (e.target.closest('.g-node'))
+            return;
+        if (pathNodeIds.size > 0) {
+            pathNodeIds.clear();
+            pathEdgeKeys.clear();
+            selected = null;
+            render();
+        }
     });
     window.addEventListener('mousemove', (e) => {
         if (panning) {
@@ -1257,13 +1555,29 @@ function initEvents() {
 function openSceneGraph() {
     $('graph-overlay').classList.add('visible');
     initEvents();
-    // Defer render until after CSS reflow (display:none → flex needs a frame).
-    requestAnimationFrame(() => refreshSceneGraph());
+    requestAnimationFrame(() => {
+        parseGraph();
+        autoLayout();
+        // Try to restore saved pan/zoom; fall back to fitView
+        const hadState = !!localStorage.getItem(GRAPH_STATE_KEY);
+        if (hadState) {
+            restoreGraphState();
+            render();
+        }
+        else {
+            render();
+            fitView();
+        }
+    });
 }
 function closeSceneGraph() {
+    saveGraphState();
     $('graph-overlay').classList.remove('visible');
 }
 function refreshSceneGraph() {
+    pathNodeIds.clear();
+    pathEdgeKeys.clear();
+    selected = null;
     parseGraph();
     autoLayout();
     render();
@@ -1549,60 +1863,138 @@ Object.defineProperty(__exports, 'registerTheme', { get: function() { return reg
 
 __define('./monaco/completions.js', function(__exports, __req) {
 // ---------------------------------------------------------------------------
-// completions.ts — Autocomplete and hover documentation providers.
+// completions.ts — Autocomplete, hover documentation, and code intelligence.
 // ---------------------------------------------------------------------------
+const { fileMap, tabs } = __req('../state.js');
+// InsertAsSnippet = 4
+const SNIPPET = 4;
 const COMPLETIONS = [
-    { label: '*create', kind: 14, detail: '*create varName defaultValue', doc: 'Declare a global persistent variable (startup.txt only).' },
-    { label: '*create_stat', kind: 14, detail: '*create_stat key "Label" value', doc: 'Declare a stat shown in the Stats sidebar.' },
-    { label: '*scene_list', kind: 14, detail: '*scene_list', doc: 'List of scenes (startup.txt only). Indent each scene name below.' },
-    { label: '*temp', kind: 6, detail: '*temp varName [value]', doc: 'Declare a scene-local variable.' },
-    { label: '*set', kind: 7, detail: '*set varName expression', doc: 'Set any variable to a value or expression.' },
+    { label: '*create', kind: 14, detail: '*create varName defaultValue', doc: 'Declare a global persistent variable (startup.txt only).',
+        insertText: '*create ${1:varName} ${2:defaultValue}', insertTextRules: SNIPPET },
+    { label: '*create_stat', kind: 14, detail: '*create_stat key "Label" value', doc: 'Declare a stat shown in the Stats sidebar.',
+        insertText: '*create_stat ${1:key} "${2:Label}" ${3:0}', insertTextRules: SNIPPET },
+    { label: '*scene_list', kind: 14, detail: '*scene_list', doc: 'List of scenes (startup.txt only). Indent each scene name below.',
+        insertText: '*scene_list\n  ${1:prologue}', insertTextRules: SNIPPET },
+    { label: '*temp', kind: 6, detail: '*temp varName [value]', doc: 'Declare a scene-local variable.',
+        insertText: '*temp ${1:varName} ${2:false}', insertTextRules: SNIPPET },
+    { label: '*set', kind: 7, detail: '*set varName expression', doc: 'Set any variable to a value or expression.',
+        insertText: '*set ${1:varName} ${2:value}', insertTextRules: SNIPPET },
     { label: '*set_stat', kind: 7, detail: '*set_stat varName expr [min:N] [max:N]', doc: 'Set a stat variable with optional min/max clamping.' },
-    { label: '*if', kind: 17, detail: '*if (condition)', doc: 'Run the indented block if condition is true.' },
-    { label: '*elseif', kind: 17, detail: '*elseif (condition)', doc: 'Alternative branch for a *if chain.' },
+    { label: '*if', kind: 17, detail: '*if (condition)', doc: 'Run the indented block if condition is true.',
+        insertText: '*if (${1:condition})\n  $0', insertTextRules: SNIPPET },
+    { label: '*elseif', kind: 17, detail: '*elseif (condition)', doc: 'Alternative branch for a *if chain.',
+        insertText: '*elseif (${1:condition})', insertTextRules: SNIPPET },
     { label: '*else', kind: 17, detail: '*else', doc: 'Fallback block for a *if chain.' },
-    { label: '*selectable_if', kind: 17, detail: '*selectable_if (cond) #Option text', doc: 'Choice button visible but disabled when condition is false.' },
-    { label: '*loop', kind: 17, detail: '*loop (condition)', doc: 'Repeat the indented block while condition is true.' },
-    { label: '*goto', kind: 2, detail: '*goto labelName', doc: 'Jump to a *label within the current scene.' },
-    { label: '*goto_scene', kind: 2, detail: '*goto_scene sceneName', doc: 'Move to another scene file. Clears *temp variables.' },
-    { label: '*gosub', kind: 2, detail: '*gosub labelName', doc: 'Call a label in the current scene as a subroutine.' },
-    { label: '*gosub_scene', kind: 2, detail: '*gosub_scene sceneName [label]', doc: 'Call another scene as a subroutine.' },
+    { label: '*selectable_if', kind: 17, detail: '*selectable_if (cond) #Option text', doc: 'Choice button visible but disabled when condition is false.',
+        insertText: '*selectable_if (${1:condition}) #${2:Option text}', insertTextRules: SNIPPET },
+    { label: '*loop', kind: 17, detail: '*loop (condition)', doc: 'Repeat the indented block while condition is true.',
+        insertText: '*loop (${1:condition})\n  $0', insertTextRules: SNIPPET },
+    { label: '*goto', kind: 2, detail: '*goto labelName', doc: 'Jump to a *label within the current scene.',
+        insertText: '*goto ${1:labelName}', insertTextRules: SNIPPET },
+    { label: '*goto_scene', kind: 2, detail: '*goto_scene sceneName', doc: 'Move to another scene file. Clears *temp variables.',
+        insertText: '*goto_scene ${1:sceneName}', insertTextRules: SNIPPET },
+    { label: '*gosub', kind: 2, detail: '*gosub labelName', doc: 'Call a label in the current scene as a subroutine.',
+        insertText: '*gosub ${1:labelName}', insertTextRules: SNIPPET },
+    { label: '*gosub_scene', kind: 2, detail: '*gosub_scene sceneName [label]', doc: 'Call another scene as a subroutine.',
+        insertText: '*gosub_scene ${1:sceneName}', insertTextRules: SNIPPET },
     { label: '*return', kind: 2, detail: '*return', doc: 'Return from a *gosub or *call.' },
     { label: '*finish', kind: 2, detail: '*finish', doc: 'Advance to the next scene in *scene_list.' },
-    { label: '*label', kind: 3, detail: '*label name', doc: 'Mark a named jump target. Must be unique per scene.' },
-    { label: '*choice', kind: 17, detail: '*choice', doc: 'Show player choice buttons. Indent # options beneath.' },
-    { label: '*random_choice', kind: 17, detail: '*random_choice', doc: 'Silently pick one weighted branch. Format: "  40 #Label".' },
-    { label: '*title', kind: 10, detail: '*title [Tag] Text', doc: 'Show a chapter card and update the header.' },
-    { label: '*system', kind: 10, detail: '*system [text]', doc: 'Show an inline [SYSTEM] message.' },
+    { label: '*label', kind: 3, detail: '*label name', doc: 'Mark a named jump target. Must be unique per scene.',
+        insertText: '*label ${1:name}', insertTextRules: SNIPPET },
+    { label: '*choice', kind: 17, detail: '*choice', doc: 'Show player choice buttons. Indent # options beneath.',
+        insertText: '*choice\n\n  #${1:First option}\n\n    $0\n\n  #${2:Second option}\n\n    ', insertTextRules: SNIPPET },
+    { label: '*random_choice', kind: 17, detail: '*random_choice', doc: 'Silently pick one weighted branch. Format: "  40 #Label".',
+        insertText: '*random_choice\n\n  50 #${1:First branch}\n\n    $0\n\n  50 #${2:Second branch}\n\n    ', insertTextRules: SNIPPET },
+    { label: '*title', kind: 10, detail: '*title [Tag] Text', doc: 'Show a chapter card and update the header.',
+        insertText: '*title [${1:Chapter}] ${2:Title}', insertTextRules: SNIPPET },
+    { label: '*system', kind: 10, detail: '*system [text]', doc: 'Show an inline [SYSTEM] message.',
+        insertText: '*system\n  ${1:message}\n*end_system', insertTextRules: SNIPPET },
     { label: '*end_system', kind: 10, detail: '*end_system', doc: 'Close a multi-line *system block.' },
-    { label: '*notify', kind: 10, detail: '*notify "message" [ms]', doc: 'Show a toast popup.' },
+    { label: '*notify', kind: 10, detail: '*notify "message" [ms]', doc: 'Show a toast popup.',
+        insertText: '*notify "${1:message}"', insertTextRules: SNIPPET },
     { label: '*page_break', kind: 10, detail: '*page_break [buttonText]', doc: 'Pause, clear screen on continue.' },
-    { label: '*image', kind: 10, detail: '*image "file" [alt:"text"] [width:N]', doc: 'Insert an image from the media/ folder.' },
-    { label: '*input', kind: 10, detail: '*input varName "Prompt text"', doc: 'Pause and show a text input field.' },
-    { label: '*grant_skill', kind: 4, detail: '*grant_skill skillKey', doc: 'Give the player a skill.' },
+    { label: '*image', kind: 10, detail: '*image "file" [alt:"text"] [width:N]', doc: 'Insert an image from the media/ folder.',
+        insertText: '*image "${1:filename.png}"', insertTextRules: SNIPPET },
+    { label: '*input', kind: 10, detail: '*input varName "Prompt text"', doc: 'Pause and show a text input field.',
+        insertText: '*input ${1:varName} "${2:Prompt text}"', insertTextRules: SNIPPET },
+    { label: '*grant_skill', kind: 4, detail: '*grant_skill skillKey', doc: 'Give the player a skill.',
+        insertText: '*grant_skill ${1:skillKey}', insertTextRules: SNIPPET },
     { label: '*revoke_skill', kind: 4, detail: '*revoke_skill skillKey', doc: 'Remove a skill from the player.' },
-    { label: '*if_skill', kind: 17, detail: '*if_skill skillKey', doc: 'Branch if the player owns this skill.' },
-    { label: '*add_item', kind: 4, detail: '*add_item "Item Name"', doc: 'Add one item to the player inventory.' },
-    { label: '*remove_item', kind: 4, detail: '*remove_item "Item Name"', doc: 'Remove one item from inventory.' },
-    { label: '*check_item', kind: 4, detail: '*check_item "Item Name" varName', doc: 'Set varName to true/false based on item ownership.' },
-    { label: '*award_essence', kind: 4, detail: '*award_essence N', doc: 'Award N Essence points.' },
-    { label: '*journal', kind: 10, detail: '*journal text', doc: 'Add a journal entry.' },
-    { label: '*achievement', kind: 10, detail: '*achievement text', doc: 'Add an achievement entry.' },
-    { label: '*procedure', kind: 11, detail: '*procedure name', doc: 'Define a reusable block in procedures.txt.' },
-    { label: '*call', kind: 11, detail: '*call procedureName', doc: 'Run a named procedure.' },
+    { label: '*if_skill', kind: 17, detail: '*if_skill skillKey', doc: 'Branch if the player owns this skill.',
+        insertText: '*if_skill ${1:skillKey}\n  $0', insertTextRules: SNIPPET },
+    { label: '*add_item', kind: 4, detail: '*add_item "Item Name"', doc: 'Add one item to the player inventory.',
+        insertText: '*add_item "${1:Item Name}"', insertTextRules: SNIPPET },
+    { label: '*remove_item', kind: 4, detail: '*remove_item "Item Name"', doc: 'Remove one item from inventory.',
+        insertText: '*remove_item "${1:Item Name}"', insertTextRules: SNIPPET },
+    { label: '*check_item', kind: 4, detail: '*check_item "Item Name" varName', doc: 'Set varName to true/false based on item ownership.',
+        insertText: '*check_item "${1:Item Name}" ${2:varName}', insertTextRules: SNIPPET },
+    { label: '*award_essence', kind: 4, detail: '*award_essence N', doc: 'Award N Essence points.',
+        insertText: '*award_essence ${1:100}', insertTextRules: SNIPPET },
+    { label: '*journal', kind: 10, detail: '*journal text', doc: 'Add a journal entry.',
+        insertText: '*journal ${1:text}', insertTextRules: SNIPPET },
+    { label: '*achievement', kind: 10, detail: '*achievement text', doc: 'Add an achievement entry.',
+        insertText: '*achievement ${1:text}', insertTextRules: SNIPPET },
+    { label: '*procedure', kind: 11, detail: '*procedure name', doc: 'Define a reusable block in procedures.txt.',
+        insertText: '*procedure ${1:name}\n  $0\n  *return', insertTextRules: SNIPPET },
+    { label: '*call', kind: 11, detail: '*call procedureName', doc: 'Run a named procedure.',
+        insertText: '*call ${1:procedureName}', insertTextRules: SNIPPET },
     { label: '*save_point', kind: 5, detail: '*save_point ["Label"]', doc: 'Trigger an immediate auto-save.' },
     { label: '*checkpoint', kind: 5, detail: '*checkpoint ["Label"]', doc: 'Create a named restore point.' },
-    { label: '*define_term', kind: 10, detail: '*define_term "Term" description', doc: 'Add or update a glossary entry.' },
-    { label: '*ending', kind: 10, detail: '*ending "Title" "Subtitle"', doc: 'Show the game-ending screen.' },
-    { label: '*stat_group', kind: 3, detail: '*stat_group "Label"', doc: 'Open a collapsible section in stats panel.' },
-    { label: '*stat', kind: 3, detail: '*stat key "Label"', doc: 'Display a global variable in stats panel.' },
+    { label: '*define_term', kind: 10, detail: '*define_term "Term" description', doc: 'Add or update a glossary entry.',
+        insertText: '*define_term "${1:Term}" ${2:description}', insertTextRules: SNIPPET },
+    { label: '*ending', kind: 10, detail: '*ending "Title" "Subtitle"', doc: 'Show the game-ending screen.',
+        insertText: '*ending "${1:Title}" "${2:Subtitle}"', insertTextRules: SNIPPET },
+    { label: '*stat_group', kind: 3, detail: '*stat_group "Label"', doc: 'Open a collapsible section in stats panel.',
+        insertText: '*stat_group "${1:Label}"', insertTextRules: SNIPPET },
+    { label: '*stat', kind: 3, detail: '*stat key "Label"', doc: 'Display a global variable in stats panel.',
+        insertText: '*stat ${1:key} "${2:Label}"', insertTextRules: SNIPPET },
     { label: '*stat_color', kind: 3, detail: '*stat_color key color', doc: 'Set highlight colour for a stat row.' },
     { label: '*stat_registered', kind: 3, detail: '*stat_registered', doc: 'Auto-render all *create_stat attributes.' },
     { label: '*inventory', kind: 3, detail: '*inventory', doc: 'Render the player inventory list.' },
     { label: '*comment', kind: 15, detail: '*comment text', doc: 'Author note — ignored by the engine.' },
     { label: '*patch_state', kind: 15, detail: '*patch_state varName value', doc: 'Dev tool: directly overwrite a state variable.' },
 ];
+// ── Context helpers ────────────────────────────────────────────────────────
+function getSceneNames() {
+    const names = new Set();
+    for (const fname of fileMap.keys()) {
+        names.add(fname.replace(/\.txt$/i, ''));
+    }
+    for (const tab of tabs) {
+        names.add(tab.name.replace(/\.txt$/i, ''));
+    }
+    return [...names];
+}
+function getLabelsFromModel(model) {
+    const labels = [];
+    const lineCount = model.getLineCount();
+    for (let i = 1; i <= lineCount; i++) {
+        const line = model.getLineContent(i).trimStart();
+        const m = line.match(/^\*label\s+(\S+)/);
+        if (m)
+            labels.push(m[1]);
+    }
+    return labels;
+}
+function getDeclaredVars() {
+    const vars = new Set();
+    for (const tab of tabs) {
+        const content = tab.model.getValue();
+        for (const line of content.split('\n')) {
+            const t = line.trimStart();
+            const mC = t.match(/^\*create(?:_stat)?\s+([a-zA-Z_]\w*)/);
+            if (mC)
+                vars.add(mC[1]);
+            const mT = t.match(/^\*temp\s+([a-zA-Z_]\w*)/);
+            if (mT)
+                vars.add(mT[1]);
+        }
+    }
+    return [...vars];
+}
+// ── Completion providers ───────────────────────────────────────────────────
 function registerCompletionProvider() {
+    // Provider 1: *command completions with snippets
     monaco.languages.registerCompletionItemProvider('sa-script', {
         triggerCharacters: ['*'],
         provideCompletionItems(model, position) {
@@ -1623,9 +2015,98 @@ function registerCompletionProvider() {
                     .map(c => ({
                     label: c.label, kind: c.kind, detail: c.detail,
                     documentation: { value: c.doc },
-                    insertText: c.label, range,
+                    insertText: c.insertText ?? c.label,
+                    insertTextRules: c.insertTextRules ?? 0,
+                    range,
                 })),
             };
+        },
+    });
+    // Provider 2: context-aware completions (scene names, labels, variables)
+    monaco.languages.registerCompletionItemProvider('sa-script', {
+        triggerCharacters: [' '],
+        provideCompletionItems(model, position) {
+            const lineText = model.getLineContent(position.lineNumber);
+            const trimmed = lineText.trimStart();
+            const range = {
+                startLineNumber: position.lineNumber,
+                endLineNumber: position.lineNumber,
+                startColumn: position.column,
+                endColumn: position.column,
+            };
+            // *goto_scene / *gosub_scene → scene file names
+            if (/^\*(?:goto|gosub)_scene\s/.test(trimmed)) {
+                return {
+                    suggestions: getSceneNames().map(name => ({
+                        label: name,
+                        kind: 17,
+                        detail: name + '.txt',
+                        documentation: { value: `Navigate to scene: **${name}.txt**` },
+                        insertText: name,
+                        range,
+                    })),
+                };
+            }
+            // *goto / *gosub (not _scene) → label names in current file
+            if (/^\*(?:goto|gosub)\s/.test(trimmed) && !/^\*(?:goto|gosub)_scene\s/.test(trimmed)) {
+                return {
+                    suggestions: getLabelsFromModel(model).map(label => ({
+                        label: label,
+                        kind: 18,
+                        detail: '*label ' + label,
+                        documentation: { value: `Jump to label: **${label}**` },
+                        insertText: label,
+                        range,
+                    })),
+                };
+            }
+            // *if / *elseif → variable names
+            if (/^\*(?:if|elseif)\s/.test(trimmed)) {
+                return {
+                    suggestions: getDeclaredVars().map(v => ({
+                        label: v,
+                        kind: 6,
+                        detail: 'variable',
+                        insertText: v,
+                        range,
+                    })),
+                };
+            }
+            // *set → variable names
+            if (/^\*set\s/.test(trimmed)) {
+                return {
+                    suggestions: getDeclaredVars().map(v => ({
+                        label: v,
+                        kind: 6,
+                        detail: 'variable',
+                        insertText: v,
+                        range,
+                    })),
+                };
+            }
+            // *call → procedure names from procedures.txt tab
+            if (/^\*call\s/.test(trimmed)) {
+                const procTab = tabs.find(t => t.name === 'procedures.txt');
+                if (procTab) {
+                    const procs = [];
+                    const content = procTab.model.getValue();
+                    for (const line of content.split('\n')) {
+                        const m = line.trimStart().match(/^\*procedure\s+(\S+)/);
+                        if (m)
+                            procs.push(m[1]);
+                    }
+                    return {
+                        suggestions: procs.map(p => ({
+                            label: p,
+                            kind: 11,
+                            detail: '*procedure ' + p,
+                            insertText: p,
+                            range,
+                        })),
+                    };
+                }
+            }
+            return { suggestions: [] };
         },
     });
 }
@@ -1656,9 +2137,74 @@ function registerHoverProvider() {
         },
     });
 }
+// ── Go-to-definition and find-references ──────────────────────────────────
+function registerCompletionProvider2() {
+    const mLangs = monaco.languages;
+    // Go-to-definition: *goto label → jump to *label definition in same file
+    // *goto_scene file → open that file
+    mLangs.registerDefinitionProvider('sa-script', {
+        provideDefinition(model, position) {
+            const line = model.getLineContent(position.lineNumber).trimStart();
+            // *goto_scene / *gosub_scene → find the target tab
+            const mScene = line.match(/^\*(?:goto|gosub)_scene\s+(\S+)/);
+            if (mScene) {
+                const stem = mScene[1].replace(/\.txt$/i, '');
+                const targetTab = tabs.find(t => t.name === stem + '.txt');
+                if (targetTab) {
+                    return [{
+                            uri: targetTab.model.uri,
+                            range: { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 1 },
+                        }];
+                }
+                return null;
+            }
+            // *goto / *gosub → find *label in current file
+            const mGoto = line.match(/^\*(?:goto|gosub)\s+(\S+)/);
+            if (mGoto && !/^\*(?:goto|gosub)_scene/.test(line)) {
+                const targetLabel = mGoto[1].toLowerCase();
+                const lineCount = model.getLineCount();
+                for (let i = 1; i <= lineCount; i++) {
+                    const l = model.getLineContent(i).trimStart();
+                    const mL = l.match(/^\*label\s+(\S+)/);
+                    if (mL && mL[1].toLowerCase() === targetLabel) {
+                        return [{
+                                uri: model.uri,
+                                range: { startLineNumber: i, startColumn: 1, endLineNumber: i, endColumn: l.length + 1 },
+                            }];
+                    }
+                }
+            }
+            return null;
+        },
+    });
+    // Find references: find all *goto/gosub label references
+    mLangs.registerReferenceProvider('sa-script', {
+        provideReferences(model, position) {
+            const line = model.getLineContent(position.lineNumber).trimStart();
+            const mLabel = line.match(/^\*label\s+(\S+)/);
+            if (!mLabel)
+                return null;
+            const labelName = mLabel[1].toLowerCase();
+            const refs = [];
+            const lineCount = model.getLineCount();
+            for (let i = 1; i <= lineCount; i++) {
+                const l = model.getLineContent(i).trimStart();
+                const mGoto = l.match(/^\*(?:goto|gosub)\s+(\S+)/);
+                if (mGoto && mGoto[1].toLowerCase() === labelName) {
+                    refs.push({
+                        uri: model.uri,
+                        range: { startLineNumber: i, startColumn: 1, endLineNumber: i, endColumn: l.length + 1 },
+                    });
+                }
+            }
+            return refs;
+        },
+    });
+}
 
 Object.defineProperty(__exports, 'registerCompletionProvider', { get: function() { return registerCompletionProvider; }, enumerable: true });
 Object.defineProperty(__exports, 'registerHoverProvider', { get: function() { return registerHoverProvider; }, enumerable: true });
+Object.defineProperty(__exports, 'registerCompletionProvider2', { get: function() { return registerCompletionProvider2; }, enumerable: true });
 });
 
 __define('./ui/find.js', function(__exports, __req) {
@@ -1886,6 +2432,46 @@ Object.defineProperty(__exports, 'runGlobalReplace', { get: function() { return 
 Object.defineProperty(__exports, 'initGlobalFind', { get: function() { return initGlobalFind; }, enumerable: true });
 });
 
+__define('./ui/outline.js', function(__exports, __req) {
+// ---------------------------------------------------------------------------
+// outline.ts — Label outline panel for quick in-file navigation.
+// ---------------------------------------------------------------------------
+const { editor, $ } = __req('../state.js');
+function refreshOutline() {
+    const container = $('outline-list');
+    const model = editor?.getModel();
+    if (!model) {
+        container.innerHTML = '<div class="outline-empty">No file open.</div>';
+        return;
+    }
+    const labels = [];
+    const lineCount = model.getLineCount();
+    for (let i = 1; i <= lineCount; i++) {
+        const line = model.getLineContent(i).trimStart();
+        const m = line.match(/^\*label\s+(\S+)/);
+        if (m)
+            labels.push({ name: m[1], line: i });
+    }
+    if (!labels.length) {
+        container.innerHTML = '<div class="outline-empty">No *label entries in this file.</div>';
+        return;
+    }
+    container.innerHTML = labels.map(l => `<div class="outline-item" data-line="${l.line}">⬦ ${l.name}</div>`).join('');
+    container.querySelectorAll('.outline-item').forEach(el => {
+        el.addEventListener('click', () => {
+            const ln = +el.dataset.line;
+            if (editor) {
+                editor.revealLineInCenter(ln);
+                editor.setPosition({ lineNumber: ln, column: 1 });
+                editor.focus();
+            }
+        });
+    });
+}
+
+Object.defineProperty(__exports, 'refreshOutline', { get: function() { return refreshOutline; }, enumerable: true });
+});
+
 __define('./main.js', function(__exports, __req) {
 // ---------------------------------------------------------------------------
 // main.ts — Entry point for the SA Script Editor.
@@ -1893,18 +2479,20 @@ __define('./main.js', function(__exports, __req) {
 // Runs inside the Monaco AMD `require()` callback. Registers the language,
 // creates the editor, and wires all modules together.
 // ---------------------------------------------------------------------------
-const { setEditor, tabs, getActiveTab, layoutEditor, saveSession, loadSession, $ } = __req('./state.js');
+const { setEditor, tabs, getActiveTab, layoutEditor, saveSession, loadSession, activeTabId, $ } = __req('./state.js');
 const { registerLanguage } = __req('./monaco/language.js');
 const { registerTheme } = __req('./monaco/theme.js');
-const { registerCompletionProvider, registerHoverProvider } = __req('./monaco/completions.js');
+const { registerCompletionProvider, registerHoverProvider, registerCompletionProvider2 } = __req('./monaco/completions.js');
 const { initDecorations, scheduleDecorate } = __req('./features/decorations.js');
 const { scheduleDiagnostics } = __req('./features/diagnostics.js');
 const { registerFoldingProvider } = __req('./features/folding.js');
 const { openTab, closeActiveTab, renderTabs, activateTab } = __req('./ui/tabs.js');
 const { initContextMenu } = __req('./ui/context-menu.js');
+const { initSidebarMenu } = __req('./ui/sidebar.js');
 const { toggleFind, initLocalFind, openGlobalFind, closeGlobalFind, initGlobalFind } = __req('./ui/find.js');
 const { setSaveStatus } = __req('./ui/statusbar.js');
-const { openFolder, newFile, saveFile, loadDemoContent, initFolderInput, scheduleAutoSave } = __req('./files/file-ops.js');
+const { refreshOutline } = __req('./ui/outline.js');
+const { openFolder, newFile, saveFile, loadDemoContent, initFolderInput, scheduleAutoSave, exportProject } = __req('./files/file-ops.js');
 const { openSceneGraph, closeSceneGraph, refreshSceneGraph, fitView, zoomBy } = __req('./graph/scene-graph.js');
 // ── Monaco AMD loader config ──────────────────────────────────────────────
 require.config({
@@ -1916,6 +2504,7 @@ require(['vs/editor/editor.main'], function () {
     registerTheme();
     registerCompletionProvider();
     registerHoverProvider();
+    registerCompletionProvider2();
     registerFoldingProvider();
     // ── Create editor ───────────────────────────────────────────────────────
     const ed = window.monaco.editor.create($('monaco-mount'), {
@@ -1963,10 +2552,12 @@ require(['vs/editor/editor.main'], function () {
         scheduleAutoSave();
         scheduleDecorate();
         scheduleDiagnostics();
+        refreshOutline();
     });
     ed.onDidChangeModel(() => {
         scheduleDecorate();
         scheduleDiagnostics();
+        refreshOutline();
     });
     // ── Restore session or load demo ────────────────────────────────────────
     const saved = loadSession();
@@ -1974,7 +2565,6 @@ require(['vs/editor/editor.main'], function () {
         saved.tabs.forEach(st => {
             openTab(st.name, st.content);
         });
-        // Activate the tab that was active before refresh
         if (saved.activeIndex >= 0 && saved.activeIndex < tabs.length) {
             activateTab(tabs[saved.activeIndex].id);
         }
@@ -1989,6 +2579,7 @@ require(['vs/editor/editor.main'], function () {
     // ── Initial passes ──────────────────────────────────────────────────────
     scheduleDecorate();
     scheduleDiagnostics();
+    refreshOutline();
     window.addEventListener('resize', layoutEditor);
     // ── Wire up all button listeners ────────────────────────────────────────
     // Toolbar
@@ -2003,6 +2594,7 @@ require(['vs/editor/editor.main'], function () {
     $('btn-settings').addEventListener('click', toggleSettings);
     $('settings-close-btn').addEventListener('click', toggleSettings);
     $('btn-graph').addEventListener('click', openSceneGraph);
+    $('btn-export').addEventListener('click', exportProject);
     // Welcome buttons
     $('w-btn-open').addEventListener('click', openFolder);
     $('w-btn-new').addEventListener('click', newFile);
@@ -2018,6 +2610,12 @@ require(['vs/editor/editor.main'], function () {
     // Variable tracker toggle
     $('btn-toggle-vt').addEventListener('click', () => {
         $('var-tracker').classList.toggle('visible');
+    });
+    // Outline panel toggle
+    $('btn-toggle-outline').addEventListener('click', () => {
+        $('outline-panel').classList.toggle('visible');
+        if ($('outline-panel').classList.contains('visible'))
+            refreshOutline();
     });
     // Sidebar resize
     let resizing = false;
@@ -2042,15 +2640,15 @@ require(['vs/editor/editor.main'], function () {
     $('g-refresh').addEventListener('click', refreshSceneGraph);
     $('g-fit').addEventListener('click', () => fitView());
     $('g-layout').addEventListener('click', () => {
-        // Need to reimport to call autoLayout + render + fitView
         Promise.resolve(__req('./graph/scene-graph.js')).then(g => { g.autoLayout(); g.render(); g.fitView(); });
     });
     $('g-zin').addEventListener('click', () => zoomBy(1));
     $('g-zout').addEventListener('click', () => zoomBy(-1));
     // File input wiring
     initFolderInput();
-    // Context menu
+    // Context menus
     initContextMenu();
+    initSidebarMenu();
     // Find bars
     initLocalFind();
     initGlobalFind();
@@ -2073,6 +2671,17 @@ require(['vs/editor/editor.main'], function () {
                 closeGlobalFind();
             if ($('graph-overlay').classList.contains('visible'))
                 closeSceneGraph();
+        }
+        // Ctrl+Tab / Ctrl+Shift+Tab: cycle through tabs
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Tab') {
+            e.preventDefault();
+            if (tabs.length < 2)
+                return;
+            const currentIdx = tabs.findIndex(t => t.id === activeTabId);
+            const nextIdx = e.shiftKey
+                ? (currentIdx - 1 + tabs.length) % tabs.length
+                : (currentIdx + 1) % tabs.length;
+            activateTab(tabs[nextIdx].id);
         }
     });
 });

@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { tabs, getActiveTab, fileMap, saveSession, $ } from '../state.js';
-import { openTab, renderTabs } from '../ui/tabs.js';
+import { openTab, renderTabs, closeTab } from '../ui/tabs.js';
 import { renderSidebar, loadSidebarFile } from '../ui/sidebar.js';
 import { setSaveStatus } from '../ui/statusbar.js';
 import type { FileEntry } from '../state.js';
@@ -57,7 +57,11 @@ export function newFile(): void {
   const name = prompt('File name (e.g. chapter1.txt):', 'untitled.txt');
   if (!name?.trim()) return;
   const fname = name.trim().endsWith('.txt') ? name.trim() : name.trim() + '.txt';
-  openTab(fname, getFileTemplate(fname));
+  const content = getFileTemplate(fname);
+  const entry: FileEntry = { name: fname, content };
+  fileMap.set(fname, entry);
+  openTab(fname, content);
+  renderSidebar([...fileMap.values()]);
   setSaveStatus('New file');
 }
 
@@ -75,6 +79,69 @@ export function saveFile(): void {
   tab.modified = false;
   renderTabs();
   setSaveStatus('Saved — ' + new Date().toLocaleTimeString());
+}
+
+// ── Rename file ───────────────────────────────────────────────────────────
+
+export function renameFile(oldName: string, newName: string): void {
+  if (oldName === newName) return;
+  if (fileMap.has(newName)) {
+    alert(`A file named "${newName}" already exists.`);
+    return;
+  }
+  const entry = fileMap.get(oldName);
+  if (!entry) return;
+  fileMap.delete(oldName);
+  entry.name = newName;
+  // Sync content from open tab if present
+  const tab = tabs.find(t => t.name === oldName);
+  if (tab) {
+    entry.content = tab.model.getValue();
+    tab.name = newName;
+    renderTabs();
+  }
+  fileMap.set(newName, entry);
+  renderSidebar([...fileMap.values()]);
+  setSaveStatus(`Renamed to ${newName}`);
+}
+
+// ── Delete file ───────────────────────────────────────────────────────────
+
+export function deleteFile(name: string): void {
+  if (!confirm(`Delete "${name}"?\n\nThis removes it from the session. The original file on disk is unaffected.`)) return;
+  fileMap.delete(name);
+  const tab = tabs.find(t => t.name === name);
+  if (tab) closeTab(tab.id);
+  renderSidebar([...fileMap.values()]);
+  setSaveStatus(`Deleted ${name}`);
+}
+
+// ── Export project ────────────────────────────────────────────────────────
+
+export function exportProject(): void {
+  const bundle: Record<string, string> = {};
+  // Collect from tabs first (have latest content)
+  for (const tab of tabs) {
+    bundle[tab.name] = tab.model.getValue();
+  }
+  // Fill in any files not open as tabs
+  for (const [name, entry] of fileMap.entries()) {
+    if (!(name in bundle) && entry.content !== undefined) {
+      bundle[name] = entry.content;
+    }
+  }
+  if (Object.keys(bundle).length === 0) {
+    alert('No files to export. Open a project first.');
+    return;
+  }
+  const json = JSON.stringify(bundle, null, 2);
+  const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'sa-project.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  setSaveStatus(`Exported ${Object.keys(bundle).length} files`);
 }
 
 // ── Templates ─────────────────────────────────────────────────────────────

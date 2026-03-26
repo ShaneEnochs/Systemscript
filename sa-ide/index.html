@@ -25,6 +25,10 @@
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 2h8l2 2v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" stroke-width="1.2" fill="none"/><rect x="5" y="2" width="4" height="3" rx="0.5" stroke="currentColor" stroke-width="1.2"/><rect x="4" y="8" width="8" height="4" rx="0.5" stroke="currentColor" stroke-width="1.2"/></svg>
       Save
     </button>
+    <button class="tb-btn" id="btn-export" title="Export all files as JSON bundle">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 2v9M5 8l3 3 3-3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 13h12" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      Export
+    </button>
     <div class="toolbar-sep"></div>
     <button class="tb-btn" id="btn-find">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="6.5" cy="6.5" r="4" stroke="currentColor" stroke-width="1.2"/><path d="M9.5 9.5l3.5 3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
@@ -70,6 +74,18 @@
           <p>Open a project folder or load the demo to begin</p>
         </div>
       </div>
+
+      <!-- Outline panel -->
+      <div id="outline-panel" class="visible">
+        <div id="outline-header">
+          <span>Outline</span>
+          <button class="sidebar-header-btn" id="btn-toggle-outline" title="Toggle outline">
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 8l4-4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <div id="outline-list"></div>
+      </div>
+
       <div id="var-tracker" class="visible">
         <div id="var-tracker-header">
           <span>Variables</span>
@@ -139,7 +155,7 @@
             <div class="setting-group">
               <div class="setting-group-label">About</div>
               <div style="font-size:12px;color:var(--text-faint);line-height:1.6">
-                System Awakening Script Editor<br>v2.0 — TypeScript rebuild
+                System Awakening Script Editor<br>v3.0 — TypeScript rebuild
               </div>
             </div>
           </div>
@@ -181,6 +197,9 @@
         <span class="g-leg-item"><span class="g-leg-dot" style="background:#A02020"></span>ending</span>
         <span class="g-leg-item"><span class="g-leg-dot" style="background:#6B21D6"></span>procedure</span>
         <span class="g-leg-item"><span class="g-leg-dot" style="background:#a8a49d"></span>unlisted</span>
+        <div style="width:1px;height:14px;background:#d4cfc7;margin:0 4px"></div>
+        <span class="g-leg-item"><span class="g-leg-line" style="background:#2563EB"></span>goto</span>
+        <span class="g-leg-item"><span class="g-leg-line" style="background:#EA580C;border-style:dashed"></span>gosub</span>
       </div>
       <div style="flex:1"></div>
       <button class="g-btn" id="g-close" style="font-size:14px;padding:4px 10px">✕ Close</button>
@@ -190,10 +209,10 @@
       <svg id="graph-svg-layer" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <marker id="arr-goto" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M2 1L8 5L2 9" fill="none" stroke="#1A7F3C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 1L8 5L2 9" fill="none" stroke="#2563EB" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </marker>
           <marker id="arr-gosub" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-            <path d="M2 1L8 5L2 9" fill="none" stroke="#6B21D6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 1L8 5L2 9" fill="none" stroke="#EA580C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </marker>
         </defs>
       </svg>
@@ -203,7 +222,8 @@
       <span id="g-stat-nodes">0 scenes</span>
       <span id="g-stat-edges">0 connections</span>
       <span id="g-stat-unreachable"></span>
-      <span style="margin-left:auto;opacity:0.7">Click node to open · Scroll to zoom · Drag to pan</span>
+      <span id="g-stat-deadends"></span>
+      <span style="margin-left:auto;opacity:0.7">Click to trace path · Double-click to open · Scroll to zoom · Drag to pan</span>
     </div>
   </div>
 </div>
@@ -244,7 +264,7 @@
   </div>
 </div>
 
-<!-- Context menu -->
+<!-- Tab context menu -->
 <div id="context-menu">
   <div class="ctx-item" data-action="close">Close tab <span class="ctx-kbd">Ctrl+W</span></div>
   <div class="ctx-item" data-action="closeOthers">Close others</div>
@@ -252,6 +272,12 @@
   <div class="ctx-sep"></div>
   <div class="ctx-item" data-action="save">Save <span class="ctx-kbd">Ctrl+S</span></div>
   <div class="ctx-item" data-action="copyPath">Copy filename</div>
+</div>
+
+<!-- Sidebar file context menu -->
+<div id="sidebar-menu">
+  <div class="ctx-item" data-action="rename">Rename…</div>
+  <div class="ctx-item" data-action="delete" style="color:#c00">Delete</div>
 </div>
 
 <!-- Hidden file inputs -->

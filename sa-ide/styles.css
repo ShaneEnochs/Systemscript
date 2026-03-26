@@ -775,3 +775,14 @@
     min-width: 140px;
   }
   #sidebar-menu.visible { display: block; }
+
+/* String import/export modal */
+#string-modal { display:none; position:fixed; inset:0; background:rgba(42,34,23,.45); z-index:2200; align-items:center; justify-content:center; }
+#string-modal.visible { display:flex; }
+#string-modal-box { width:min(760px,92vw); background:#fff; border:1px solid var(--border); border-radius:12px; box-shadow:0 16px 48px rgba(0,0,0,.2); padding:16px; }
+#string-modal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+#string-modal-header h3 { font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--text); }
+#string-modal-close { border:none; background:transparent; font-size:18px; color:var(--text-faint); cursor:pointer; }
+#string-modal-desc { font-size:12px; color:var(--text-faint); margin-bottom:8px; }
+#string-modal-text { width:100%; min-height:160px; resize:vertical; border:1px solid var(--border); border-radius:8px; font:12px/1.4 "DM Mono", monospace; padding:10px; color:var(--text); }
+#string-modal-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }

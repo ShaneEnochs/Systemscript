@@ -4,7 +4,7 @@
 
 import {
   editor, tabs, activeTabId, setActiveTabId, getTab, getFileType,
-  $, updateSidebarSelection, saveSession,
+  $, updateSidebarSelection, saveSession, fileMap,
 } from '../state.js';
 import { updateStatusBar } from './statusbar.js';
 import { showContextMenu } from './context-menu.js';
@@ -19,6 +19,9 @@ export function openTab(name: string, content: string): void {
   const ft = getFileType(name);
   const model = monaco.editor.createModel(content, 'sa-script');
   tabs.push({ id, name, content, model, modified: false, fileType: ft });
+  if (!fileMap.has(name)) fileMap.set(name, { name, content });
+  window.dispatchEvent(new CustomEvent('sa-project-files-changed'));
+
   activateTab(id);
   $('welcome').style.display = 'none';
   saveSession();

@@ -88,8 +88,8 @@ const EXPORTS = {
   './ui/statusbar.js': ['setSaveStatus'],
   './ui/context-menu.js': ['initContextMenu'],
   './files/file-ops.js': [
-    'openFolder', 'newFile', 'saveFile', 'loadDemoContent',
-    'initFolderInput', 'scheduleAutoSave',
+    'openFiles', 'newFile', 'saveFile', 'loadDemoContent',
+    'initFileInput', 'scheduleAutoSave', 'openImportModal', 'initStringModal',
   ],
 };
 
@@ -140,14 +140,14 @@ console.log('\n── 3e. Button listeners wired up ─────────�
 // ══════════════════════════════════════════════════════════
 
 const WIRED_BUTTONS = [
-  ['btn-open',       'openFolder'],
+  ['btn-open',       'openFiles'],
   ['btn-new',        'newFile'],
   ['btn-save',       'saveFile'],
-  ['btn-find',       'toggleFind'],
+  ['btn-import',     'openImportModal'],
   ['btn-graph',      'openSceneGraph'],
   ['btn-problems',   'toggleProblems'],
   ['btn-settings',   'toggleSettings'],
-  ['w-btn-open',     'openFolder'],
+  ['w-btn-open',     'openFiles'],
   ['w-btn-demo',     'loadDemoContent'],
   ['g-close',        'closeSceneGraph'],
   ['g-refresh',      'refreshSceneGraph'],
@@ -242,7 +242,7 @@ ok('Ctrl+S → saveFile',          BUNDLE.includes('KeyCode.KeyS') && BUNDLE.inc
 ok('Ctrl+F → toggleFind',        BUNDLE.includes('KeyCode.KeyF') && BUNDLE.includes('toggleFind'));
 ok('Ctrl+N → newFile',           BUNDLE.includes('KeyCode.KeyN') && BUNDLE.includes('newFile'));
 ok('Ctrl+W → closeActiveTab',    BUNDLE.includes('KeyCode.KeyW') && BUNDLE.includes('closeActiveTab'));
-ok('Ctrl+O → openFolder',        BUNDLE.includes("key === 'o'") && BUNDLE.includes('openFolder'));
+ok('Ctrl+O → openFiles',        BUNDLE.includes("key === 'o'") && BUNDLE.includes('openFiles'));
 ok('Ctrl+Shift+F → openGlobalFind', BUNDLE.includes('openGlobalFind'));
 ok('Escape → closeSceneGraph',   BUNDLE.includes('closeSceneGraph') && BUNDLE.includes("key === 'Escape'"));
 

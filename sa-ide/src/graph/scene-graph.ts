@@ -93,7 +93,10 @@ export function parseGraph(): void {
   let idC = 1;
   const nameToId: Record<string, number> = {};
 
-  const sources = tabs.map(t => ({ name: t.name, content: t.model.getValue() }));
+  const openContents = new Map(tabs.map(t => [t.name, t.model.getValue()] as const));
+  const sources = [...fileMap.values()]
+    .filter(f => f.name.toLowerCase().endsWith('.txt'))
+    .map(f => ({ name: f.name, content: openContents.get(f.name) ?? f.content ?? '' }));
 
   function fileRole(n: string): string {
     if (n === 'startup.txt')    return 'startup';

@@ -226,6 +226,7 @@ function renderNodes(): void {
   nodes.forEach(n => {
     const el = document.createElement('div');
     el.className = 'g-node' + (n.id === selected ? ' g-selected' : '') + (n.ghost ? ' g-unreachable' : '');
+    el.dataset.id = String(n.id);
     el.style.left = n.x + 'px';
     el.style.top = n.y + 'px';
     el.style.width = NW + 'px';
@@ -240,7 +241,9 @@ function renderNodes(): void {
       const [cx, cy] = s2c(e.clientX, e.clientY);
       dragOX = cx - n.x;
       dragOY = cy - n.y;
-      renderNodes();
+      canvasEl().querySelectorAll('.g-node').forEach(nd => {
+        (nd as HTMLElement).classList.toggle('g-selected', (nd as HTMLElement).dataset.id === String(n.id));
+      });
     });
 
     el.addEventListener('click', () => {
@@ -373,7 +376,6 @@ export function initEvents(): void {
       panX = e.clientX - panSX;
       panY = e.clientY - panSY;
       updXform();
-      renderEdges();
       drawGrid();
     }
     if (dragging) {

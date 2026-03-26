@@ -1,4 +1,4 @@
-// SA Script Editor v2.0 — bundled 2026-03-25
+// SA Script Editor v2.0 — bundled 2026-03-26
 'use strict';
 (function() {
 
@@ -860,7 +860,7 @@ function loadDemoContent() {
     fileMap.clear();
     demoFiles.forEach(e => fileMap.set(e.name, e));
     renderSidebar(demoFiles);
-    openTab(demoFiles[0].name, demoFiles[0].content);
+    demoFiles.forEach(e => openTab(e.name, e.content));
     $('welcome').style.display = 'none';
 }
 
@@ -1075,6 +1075,7 @@ function renderNodes() {
     nodes.forEach(n => {
         const el = document.createElement('div');
         el.className = 'g-node' + (n.id === selected ? ' g-selected' : '') + (n.ghost ? ' g-unreachable' : '');
+        el.dataset.id = String(n.id);
         el.style.left = n.x + 'px';
         el.style.top = n.y + 'px';
         el.style.width = NW + 'px';
@@ -1088,7 +1089,9 @@ function renderNodes() {
             const [cx, cy] = s2c(e.clientX, e.clientY);
             dragOX = cx - n.x;
             dragOY = cy - n.y;
-            renderNodes();
+            canvasEl().querySelectorAll('.g-node').forEach(nd => {
+                nd.classList.toggle('g-selected', nd.dataset.id === String(n.id));
+            });
         });
         el.addEventListener('click', () => {
             if (!n.ghost) {
@@ -1218,7 +1221,6 @@ function initEvents() {
             panX = e.clientX - panSX;
             panY = e.clientY - panSY;
             updXform();
-            renderEdges();
             drawGrid();
         }
         if (dragging) {

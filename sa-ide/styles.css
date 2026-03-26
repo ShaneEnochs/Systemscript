@@ -557,6 +557,7 @@
   #graph-canvas {
     position: absolute; top: 0; left: 0;
     transform-origin: 0 0;
+    z-index: 3;
   }
   #graph-svg-layer {
     position: absolute; top: 0; left: 0;
@@ -567,6 +568,7 @@
   }
   #graph-svg { overflow: visible; }
   #graph-grid { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+  .g-edge { fill: none; stroke-opacity: 0.7; pointer-events: none; }
 
   .g-node {
     position: absolute; border-radius: 8px;

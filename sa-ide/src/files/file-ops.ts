@@ -154,6 +154,6 @@ export function loadDemoContent(): void {
   fileMap.clear();
   demoFiles.forEach(e => fileMap.set(e.name, e));
   renderSidebar(demoFiles);
-  openTab(demoFiles[0].name, demoFiles[0].content!);
+  demoFiles.forEach(e => openTab(e.name, e.content!));
   $('welcome').style.display = 'none';
 }
